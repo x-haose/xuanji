@@ -6,6 +6,7 @@
   var FS =
     '#version 300 es\nprecision highp float;\n' +
     'uniform vec2 u_res; uniform float u_time; uniform vec2 u_mouse; uniform float u_minf; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
+    U.SEAL_GLSL +
     'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+34.5);return fract(p.x*p.y);}\n' +
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n' +
     'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<5;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}\n' +
@@ -64,6 +65,15 @@
     ' float mg=exp(-dot(p-u_mouse,p-u_mouse)*30.0)*(0.45+0.55*noise(vec2(t*30.0,3.0)));\n' +
     ' col+=vec3(0.5,0.66,1.0)*mg*u_minf*0.5;\n' +
     ' col+=boltc*mbolt(p,u_mouse.x,t)*u_minf;\n' +
+    // 圣号显雷：笔画常驻等离子微光(五行色) + 劈雷时被电光灌满 + 强拍电蚀
+    // 圣号随云涌轻漾、劈雷时抖动（域扭曲让字形不再刚性静止）
+    ' vec2 swp=vec2(fbm(p*2.2+vec2(t*0.15,0.0)),fbm(p*2.2+vec2(4.0,t*0.12)))-0.5;\n' +
+    ' float sc=sealCov(gl_FragCoord.xy+swp*u_res.y*(0.012+amb*0.022),u_res);\n' +
+    ' if(sc>0.001){\n' +
+    '  float pl=0.34+0.22*noise(vec2(p.y*26.0,t*3.0));\n' + // 常驻等离子微光，平时即清晰
+    '  col+=(u_accent*0.7+vec3(0.35,0.45,0.7))*sc*pl;\n' + // 五行色掺电蓝，笔画自发光
+    '  col+=boltc*sc*amb*2.0;\n' + // 劈雷时圣号被雷光灌满爆亮
+    '  col+=boltc*sc*step(0.62,u_bass)*strike(t*3.7,u_bass)*0.8;}\n' +
     ' col*=smoothstep(1.35,0.2,length(p));\n' +
     ' frag=vec4(col,1.0);}';
 
@@ -91,6 +101,7 @@
         gl.uniform1f(uMinf, mo.influence);
         gl.uniform3fv(uAccent, window.XuanjiFx.accent);
         gl.uniform1f(gl.getUniformLocation(prog, 'u_bass'), window.XuanjiFx.audio.bass);
+        U.bindSeal(gl, prog, w, h, 1);
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },

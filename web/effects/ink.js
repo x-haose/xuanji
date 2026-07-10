@@ -14,6 +14,7 @@
     '#version 300 es\nprecision highp float;\n' +
     'uniform sampler2D u_dye; uniform vec2 u_res; uniform float u_time; uniform float u_dt;\n' +
     'uniform vec2 u_mouse; uniform float u_minf; uniform float u_audio; out vec4 frag;\n' +
+    U.SEAL_GLSL +
     NOISE +
     'float pot(vec2 p){return fbm(p*2.3+vec2(u_time*0.08,u_time*0.05));}\n' + // 势场适度翻涌保持流动
     'vec2 curl(vec2 p){float e=0.002;\n' +
@@ -28,18 +29,26 @@
     ' float well=smoothstep(0.42-u_audio*0.12,0.74,fbm(uv*2.2-vec2(u_time*0.02,u_time*0.03)));\n' + // 音量越大墨涌越盛
     ' d=max(d,well*(0.85+u_audio*0.5));\n' +
     ' d=max(d,exp(-dm2*140.0)*u_minf*0.9);\n' + // 鼠标注墨
+    ' d=max(d,sealCov(gl_FragCoord.xy,u_res)*0.22);\n' + // 圣号周围少量流墨氛围（淡，任其被流场洇开），清晰笔画在渲染期叠加
     ' frag=vec4(clamp(d,0.0,1.0),0.0,0.0,1.0);}';
 
   // 染料 → 墨色（深底淡墨雾 + 焦墨 + 飞白 + 五行微染）
   var RENDER_FS =
     '#version 300 es\nprecision highp float;\n' +
-    'uniform sampler2D u_dye; uniform vec2 u_res; uniform vec3 u_accent; out vec4 frag;\n' +
+    'uniform sampler2D u_dye; uniform vec2 u_res; uniform vec3 u_accent; uniform float u_time; out vec4 frag;\n' +
+    NOISE +
+    U.SEAL_GLSL +
     'void main(){vec2 uv=gl_FragCoord.xy/u_res;float d=texture(u_dye,uv).r;\n' +
+
     ' vec3 paper=vec3(0.022,0.022,0.028);vec3 wash=vec3(0.42,0.43,0.41);\n' + // 更黑的底 + 收暗的淡墨
     ' vec3 col=mix(paper,wash,smoothstep(0.08,0.62,d));\n' + // 墨显现，靠暗底+焦墨拉对比留白
     ' col=mix(col,vec3(0.01,0.01,0.014),smoothstep(0.8,1.0,d)*0.6);\n' + // 焦墨更浓
     ' col+=vec3(0.9,0.88,0.82)*smoothstep(0.4,0.55,d)*(1.0-smoothstep(0.55,0.75,d))*0.18;\n' + // 飞白收弱
     ' vec2 p=(uv-0.5)*vec2(u_res.x/u_res.y,1.0);col*=smoothstep(0.95,0.2,length(p));\n' +
+    // 圣号在暗角之上叠加（否则左缘暗角把它压暗看不清）：清晰浓墨 + 轻微发光触发泛光 + 随墨流荡漾
+    ' vec2 swp=vec2(noise(uv*7.0+vec2(u_time*0.25,0.0)),noise(uv*7.0+vec2(5.0,u_time*0.2)))-0.5;\n' +
+    ' float sc=sealCov(gl_FragCoord.xy+swp*u_res.y*0.013,u_res);\n' +
+    ' col=mix(col,vec3(0.6,0.6,0.57),clamp(sc,0.0,1.0));\n' + // 柔和墨灰：读得清但不炸 bloom/色散，保留水墨味
     ' frag=vec4(col,1.0);}';
 
   window.XuanjiFx.register('ink', function (gl, canvas) {
@@ -109,6 +118,7 @@
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, read.tex);
         gl.uniform1i(uni(simProg, 'u_dye'), 0);
+        window.XuanjiFx.util.bindSeal(gl, simProg, write.w, write.h, 1);
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -117,10 +127,12 @@
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.useProgram(renderProg);
         gl.uniform2f(uni(renderProg, 'u_res'), canvas.width, canvas.height);
+        gl.uniform1f(uni(renderProg, 'u_time'), t);
         gl.uniform3fv(uni(renderProg, 'u_accent'), window.XuanjiFx.accent);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, write.tex);
         gl.uniform1i(uni(renderProg, 'u_dye'), 0);
+        window.XuanjiFx.util.bindSeal(gl, renderProg, canvas.width, canvas.height, 1);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.bindVertexArray(null);
 

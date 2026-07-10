@@ -13,16 +13,25 @@
     '#version 300 es\n' +
     'layout(location=0) in vec2 a_pos; layout(location=1) in float a_age;\n' +
     'uniform float u_time; uniform float u_dt; uniform vec2 u_mouse; uniform float u_minf; uniform float u_bass;\n' +
+    'uniform sampler2D u_seal; uniform vec4 u_sealRect; uniform float u_sealOn;\n' +
     'out vec2 v_pos; out float v_age;\n' +
     NOISE +
     'float h1(float n){return fract(sin(n)*43758.5453123);}\n' +
+    'float covAt(vec2 uv){ if(u_sealOn<0.5) return 0.0;\n' +
+    ' vec2 s=(uv-u_sealRect.xy)/u_sealRect.zw;\n' +
+    ' if(s.x<0.0||s.x>1.0||s.y<0.0||s.y>1.0) return 0.0;\n' +
+    ' return texture(u_seal, vec2(s.x,1.0-s.y)).a; }\n' +
     'float pot(vec2 p){return fbm(p*1.6+vec2(u_time*0.05,0.0));}\n' +
     'vec2 curl(vec2 p){float e=0.01;\n' +
     ' float dx=pot(p+vec2(e,0.0))-pot(p-vec2(e,0.0));\n' +
     ' float dy=pot(p+vec2(0.0,e))-pot(p-vec2(0.0,e));\n' +
     ' return vec2(dy,-dx)/(2.0*e);}\n' +
     'void main(){\n' +
-    ' vec2 np=a_pos+curl(a_pos)*(0.45+u_bass*1.1)*u_dt;\n' + // 鼓点让星尘随气涌加速冲刺
+    ' float cC=covAt(a_pos*0.5+0.5);\n' + // 当前是否落在笔画上
+    ' vec2 np=a_pos+curl(a_pos)*(0.45+u_bass*1.1)*(1.0-cC*0.32)*u_dt;\n' + // 笔画内轻微减速（尘流穿过，不堆死）
+    ' if(u_sealOn>0.5){vec2 uv=np*0.5+0.5;float e=0.014;\n' + // 温和吸向笔画：勾勒字形而不过度堆积
+    '  vec2 g=vec2(covAt(uv+vec2(e,0.0))-covAt(uv-vec2(e,0.0)), covAt(uv+vec2(0.0,e))-covAt(uv-vec2(0.0,e)));\n' +
+    '  np+=g*0.012;}\n' +
     // 鼠标扰动：绕光标旋流 + 轻微吸引，强度随 influence 与距离衰减
     ' vec2 tom=u_mouse-a_pos;float dm=length(tom);\n' +
     ' np+=(vec2(-tom.y,tom.x)*3.0+tom*0.3)*exp(-dm*2.2)*u_minf*u_dt;\n' +
@@ -50,7 +59,7 @@
     ' float glow=smoothstep(0.5,0.0,r);\n' +
     ' float fade=smoothstep(0.0,0.8,v_age)*(1.0-smoothstep(6.0,9.0,v_age));\n' +
     ' vec3 col=mix(vec3(0.45,0.68,1.0),vec3(0.92,0.95,1.0),fract(v_age*0.2)*0.5);\n' + // 青白
-    ' frag=vec4(col*glow*fade*0.5*(1.0+u_bass*3.2),1.0);}'; // 低频提亮
+    ' frag=vec4(col*glow*fade*0.34*(1.0+u_bass*2.6),1.0);}'; // 降单颗粒亮度：密集叠加不易爆白
 
   function compile(gl, type, src) {
     var s = gl.createShader(type);
@@ -125,9 +134,21 @@
       'void main(){vec2 d=gl_FragCoord.xy/u_res-u_mouse;d.x*=u_res.x/u_res.y;float r=length(d);\n' +
       ' float g=exp(-r*r*1400.0)*0.5+exp(-r*r*160.0)*0.07;\n' +
       ' frag=vec4(vec3(0.6,0.8,1.0)*g*u_minf,1.0);}';
+    // 圣号显影：星尘拖尾流经笔画处提亮，圣名随尘流明灭浮现
+    var SEAL_FS =
+      '#version 300 es\nprecision highp float;\n' +
+      'uniform sampler2D u_trail; uniform vec2 u_res; uniform vec3 u_accent; uniform float u_bass;\n' +
+      U.SEAL_GLSL +
+      'out vec4 frag;\n' +
+      'void main(){ float sc=sealCov(gl_FragCoord.xy,u_res);\n' +
+      ' if(sc<0.001){frag=vec4(0.0);return;}\n' +
+      ' vec3 tr=texture(u_trail,gl_FragCoord.xy/u_res).rgb; float lum=max(tr.r,max(tr.g,tr.b));\n' +
+      ' float g=sc*(0.32+0.55*min(lum,0.45))*(1.0+u_bass*1.1);\n' + // 主要吃均匀底(每字亮度匀) + 尘流处轻提亮(峰值封顶，不爆白团)
+      ' frag=vec4((u_accent*0.6+vec3(0.4,0.55,0.9))*g,1.0);}';
     var fadeProg = program(gl, U.FS_VS, FADE_FS);
     var blitProg = program(gl, U.FS_VS, BLIT_FS);
     var glowProg = program(gl, U.FS_VS, GLOW_FS);
+    var sealProg = program(gl, U.FS_VS, SEAL_FS);
     var quad = U.fullscreenTriangle(gl);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     var gRes = gl.getUniformLocation(glowProg, 'u_res');
@@ -146,6 +167,10 @@
     var uFade = gl.getUniformLocation(fadeProg, 'u_color');
     var uBlitTex = gl.getUniformLocation(blitProg, 'u_tex');
     var uBlitRes = gl.getUniformLocation(blitProg, 'u_res');
+    var sTrail = gl.getUniformLocation(sealProg, 'u_trail');
+    var sRes = gl.getUniformLocation(sealProg, 'u_res');
+    var sAccent = gl.getUniformLocation(sealProg, 'u_accent');
+    var sBass = gl.getUniformLocation(sealProg, 'u_bass');
 
     var trail = null;
     function makeTrail(w, h) {
@@ -188,6 +213,7 @@
         gl.uniform2f(uMouse, m.x * 2.0 - 1.0, m.y * 2.0 - 1.0); // [0,1] → clip[-1,1]
         gl.uniform1f(uMinf, m.influence);
         gl.uniform1f(uBassU, window.XuanjiFx.audio.bass);
+        U.bindSeal(gl, updateProg, canvas.width, canvas.height, 1);
         gl.bindVertexArray(read.vao);
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
         gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, write.buf);
@@ -228,6 +254,21 @@
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
 
+        // 圣号显影：星尘拖尾流经笔画处提亮
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.useProgram(sealProg);
+        gl.uniform2f(sRes, trail.w, trail.h);
+        gl.uniform3fv(sAccent, window.XuanjiFx.accent);
+        gl.uniform1f(sBass, window.XuanjiFx.audio.bass);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, trail.tex);
+        gl.uniform1i(sTrail, 0);
+        U.bindSeal(gl, sealProg, trail.w, trail.h, 1);
+        gl.bindVertexArray(quad);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.disable(gl.BLEND);
+
         // 光标气眼（加色叠加到场景，随 influence 亮起）
         if (m.influence > 0.01) {
           gl.enable(gl.BLEND);
@@ -258,6 +299,7 @@
         gl.deleteProgram(fadeProg);
         gl.deleteProgram(blitProg);
         gl.deleteProgram(glowProg);
+        gl.deleteProgram(sealProg);
         gl.deleteTransformFeedback(tf);
         gl.deleteBuffer(bufA);
         gl.deleteBuffer(bufB);

@@ -127,6 +127,78 @@
     }
   }
 
+  // ── 共享圣号资源：十字天经圣号字形，供各特效在笔画处「生长」出圣名 ──
+  // tex：覆盖度纹理（片元 shader 采样）；points：笔画采样点云（星座/发射源）；
+  // rect(w,h)：圣号在屏幕上的 uv 矩形（左侧竖幅，与 DOM 版位置一致，gl_FragCoord 下-上）。
+  var seal = {
+    ready: false, // 纹理已上传
+    show: true, // 由 showtitle 开关联动
+    tex: null,
+    points: null, // Float32Array [lx,ly,...] 局部 uv（0..1，y 向下=从上到下）
+    aspect: 520 / 6446, // 图宽/高
+    _imgReady: false,
+    H_UV: 0.8, // 竖幅占屏高
+    X_UV: 0.03, // 左边距
+    rect: function (w, h) {
+      var huv = this.H_UV;
+      var wuv = (huv * this.aspect) / (w / h); // 保持像素纵横比
+      return [this.X_UV, (1 - huv) / 2, wuv, huv];
+    },
+  };
+  var sealImg = new Image();
+  sealImg.onload = function () {
+    seal.aspect = sealImg.naturalWidth / sealImg.naturalHeight;
+    try {
+      seal.points = buildSealPoints(sealImg, 1600);
+    } catch (e) {
+      seal.points = new Float32Array(0);
+    }
+    seal._imgReady = true;
+    uploadSealTex();
+  };
+  sealImg.src = 'assets/img/tianzun-seal.png';
+
+  /// 从圣号 PNG 的 alpha 通道按覆盖度加权采样出笔画点云（确定性，稳定不抖）。
+  function buildSealPoints(img, n) {
+    var cw = 170, ch = Math.round((cw * img.naturalHeight) / img.naturalWidth);
+    var c = document.createElement('canvas');
+    c.width = cw;
+    c.height = ch;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, cw, ch);
+    var data = ctx.getImageData(0, 0, cw, ch).data;
+    var cand = [];
+    for (var y = 0; y < ch; y++) {
+      for (var x = 0; x < cw; x++) {
+        if (data[(y * cw + x) * 4 + 3] > 130) cand.push(x / cw, y / ch);
+      }
+    }
+    var out = new Float32Array(n * 2);
+    var s = 20260710;
+    for (var i = 0; i < n; i++) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      var k = (s % (cand.length / 2)) | 0;
+      out[i * 2] = cand[k * 2];
+      out[i * 2 + 1] = cand[k * 2 + 1];
+    }
+    return out;
+  }
+
+  /// gl 就绪且图已解码后把圣号上传成纹理（幂等）。
+  function uploadSealTex() {
+    if (!gl || seal.tex || !seal._imgReady) return;
+    var tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, sealImg);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    seal.tex = tex;
+    seal.ready = true;
+  }
+
   /// 特效激活时给玻璃卡片垫一层深色背衬，保证亮背景下文字仍清晰可读。
   function injectReadabilityStyle() {
     if (document.getElementById('xuanji-fx-style')) return;
@@ -150,7 +222,9 @@
       '0 0 48px rgba(var(--fx-accent,120,140,230),0.45)!important;}' + // 更强外晕
       'body.fx-active .digital-clock{color:#fff!important;text-shadow:0 0 14px rgba(var(--fx-accent,120,140,230),0.9),0 0 4px rgba(var(--fx-accent,120,140,230),0.7)!important;letter-spacing:0.16em!important;font-variant-numeric:tabular-nums;}' +
       // 星盘激活时隐去原阿拉伯数字，改用注入的十二地支
-      'body.fx-active .clock-face .num{opacity:0!important;}';
+      'body.fx-active .clock-face .num{opacity:0!important;}' +
+      // 特效激活时隐藏 DOM 圣号——改由各特效在 canvas 内「生长」出圣名
+      'body.fx-active #dao-title{display:none!important;}';
     document.head.appendChild(s);
   }
 
@@ -448,6 +522,7 @@
       post = null;
       console.error('[fx] 后期处理初始化失败，改直渲: ' + (e && e.message ? e.message : e));
     }
+    uploadSealTex(); // gl 就绪，若图已解码则上传圣号纹理
     return true;
   }
 
@@ -568,6 +643,26 @@
     FS_VS:
       '#version 300 es\nlayout(location=0) in vec2 a_pos;\n' +
       'void main(){gl_Position=vec4(a_pos,0.0,1.0);}',
+    /// 圣号采样 GLSL 片段：拼进各特效 fragment shader，返回当前像素的笔画覆盖度 [0,1]。
+    SEAL_GLSL:
+      'uniform sampler2D u_seal; uniform vec4 u_sealRect; uniform float u_sealOn;\n' +
+      'float sealCov(vec2 fc, vec2 res){ if(u_sealOn<0.5) return 0.0;\n' +
+      ' vec2 s=(fc/res - u_sealRect.xy)/u_sealRect.zw;\n' +
+      ' if(s.x<0.0||s.x>1.0||s.y<0.0||s.y>1.0) return 0.0;\n' +
+      ' return texture(u_seal, vec2(s.x, 1.0-s.y)).a; }\n',
+    /// 设定圣号相关 uniform 并把纹理绑到 unit（供 SEAL_GLSL 采样）。
+    bindSeal: function (gl, prog, w, h, unit) {
+      var s = window.XuanjiFx.seal;
+      var on = s.ready && s.show ? 1 : 0;
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_sealOn'), on);
+      if (!on) return;
+      var r = s.rect(w, h);
+      gl.uniform4f(gl.getUniformLocation(prog, 'u_sealRect'), r[0], r[1], r[2], r[3]);
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, s.tex);
+      gl.uniform1i(gl.getUniformLocation(prog, 'u_seal'), unit);
+      gl.activeTexture(gl.TEXTURE0);
+    },
     /// 编译链接一个着色器程序；失败抛错并附日志。
     program: function (gl, vsSrc, fsSrc) {
       function sh(type, src) {
@@ -733,6 +828,7 @@
       return !!registry[name];
     },
     util: util,
+    seal: seal, // 共享圣号资源：各特效在笔画处生长出圣名
     mouse: mouse, // 特效读 mouse.x / mouse.y / mouse.influence（每帧更新）
     accent: accent, // 今日五行主色 [r,g,b]（稳定引用，内容随日期更新）
     audio: audio, // 音频律动 {level,bass,mid,treble}（0..1，每拍更新）

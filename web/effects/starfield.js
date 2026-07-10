@@ -6,6 +6,7 @@
   var NEBULA_FS =
     '#version 300 es\nprecision highp float;\n' +
     'uniform vec2 u_res; uniform float u_time; uniform vec3 u_accent; uniform float u_audio; out vec4 frag;\n' +
+    U.SEAL_GLSL +
     'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+34.5);return fract(p.x*p.y);}\n' +
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n' +
     'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}\n' +
@@ -26,6 +27,11 @@
     ' col+=vec3(0.5,0.58,0.75)*band*(0.12+0.3*n)*0.5;\n' +
     // 流星偶发
     ' col+=vec3(0.9,0.95,1.0)*(meteor(p,u_time,0.13)+meteor(p,u_time,0.57))*1.3;\n' +
+    // 圣号星云：笔画处漫起一层清亮辉光托住星宿；随时间轻漾(域扭曲)让字形呼吸
+    ' vec2 swp=vec2(fbm(p*2.5+vec2(t*0.1,0.0)),fbm(p*2.5+vec2(3.0,t*0.08)))-0.5;\n' +
+    ' float sc=sealCov(gl_FragCoord.xy+swp*u_res.y*0.010,u_res);\n' +
+    ' col+=(u_accent*0.55+vec3(0.34,0.4,0.52))*sc*(0.62+0.12*fbm(p*5.0+vec2(t,t*0.4)));\n' + // 字先作一团柔光成形，托住星宿
+
     ' col*=smoothstep(1.25,0.2,length(p));\n' +
     ' col*=1.0+u_audio*1.2;\n' + // 随总能量提亮
     ' frag=vec4(col,1.0);}';
@@ -33,18 +39,22 @@
   var STAR_VS =
     '#version 300 es\n' +
     'layout(location=0) in vec2 a_pos; layout(location=1) in float a_size; layout(location=2) in float a_seed;\n' +
-    'uniform float u_time; uniform float u_aspect; uniform float u_px; uniform vec2 u_par; uniform float u_bass;\n' +
+    'uniform float u_time; uniform float u_aspect; uniform float u_px; uniform vec2 u_par; uniform float u_bass; uniform float u_rot; uniform float u_jitter;\n' +
     'out float v_seed;\n' +
-    'void main(){vec2 p=a_pos;p.x*=u_aspect;float a=u_time*0.01;float c=cos(a),s=sin(a);\n' +
-    ' p=mat2(c,-s,s,c)*p;p.x/=u_aspect;p+=u_par;gl_Position=vec4(p,0.0,1.0);\n' +
+    'void main(){vec2 p=a_pos;p.x*=u_aspect;float a=u_time*0.01*u_rot;float c=cos(a),s=sin(a);\n' +
+    ' p=mat2(c,-s,s,c)*p;p.x/=u_aspect;\n' +
+    ' p+=u_jitter*0.004*vec2(sin(u_time*1.3+a_seed*30.0),cos(u_time*1.1+a_seed*20.0));\n' + // 圣号星各自微漂：字形活起来
+    ' p+=u_par;gl_Position=vec4(p,0.0,1.0);\n' +
     ' gl_PointSize=a_size*u_px*(1.0+u_bass*2.2);v_seed=a_seed;}'; // 低频胀星
 
   var STAR_FS =
     '#version 300 es\nprecision highp float;\n' +
-    'in float v_seed; uniform float u_time; uniform float u_bright; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
+    'in float v_seed; uniform float u_time; uniform float u_bright; uniform vec3 u_accent; uniform float u_bass;\n' +
+    'uniform vec3 u_starcol; uniform float u_starmix; out vec4 frag;\n' + // u_starmix>0：统一染成 u_starcol（圣号星宿用）
     'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);if(r>0.5)discard;\n' +
     ' float glow=smoothstep(0.5,0.0,r);float tw=0.55+0.45*sin(u_time*2.0+v_seed*6.283);\n' +
     ' vec3 col=mix(vec3(0.7,0.8,1.0),vec3(1.0,0.95,0.82),fract(v_seed*7.0));\n' +
+    ' col=mix(col,u_starcol,u_starmix);\n' +
     ' frag=vec4(col*glow*tw*u_bright*(1.0+u_bass*1.7),1.0);}'; // 低频提亮
 
   var LINE_VS =
@@ -142,6 +152,28 @@
       return gl.getUniformLocation(p, n);
     }
 
+    // 圣号星宿：笔画点云 → 亮星（不随天旋，圣名正立）。位置依纵横比，尺寸变化时重建。
+    var sealVao = null, sealCount = 0, sealKey = '';
+    function buildSealStars() {
+      var s = window.XuanjiFx.seal;
+      if (!s.points || !s.points.length) return;
+      var r = s.rect(w, h), x0 = r[0], y0 = r[1], wuv = r[2], huv = r[3];
+      var m = s.points.length / 2;
+      var pos = new Float32Array(m * 2), size = new Float32Array(m), seed = new Float32Array(m);
+      for (var i = 0; i < m; i++) {
+        var ux = x0 + s.points[i * 2] * wuv;
+        var uy = y0 + (1.0 - s.points[i * 2 + 1]) * huv; // 图 y 向下 → uv 下-上
+        pos[i * 2] = ux * 2 - 1;
+        pos[i * 2 + 1] = uy * 2 - 1;
+        size[i] = 0.9 + (((i * 2654435761) >>> 0) % 1000) / 1000 * 0.9; // 更小更匀，密集成笔画
+        seed[i] = ((i * 40503) % 997) / 997;
+      }
+      if (sealVao) gl.deleteVertexArray(sealVao);
+      sealVao = attribVao(gl, pos, size, seed);
+      sealCount = m;
+      sealKey = w + 'x' + h;
+    }
+
     return {
       resize: function (nw, nh) {
         w = nw;
@@ -163,6 +195,7 @@
         gl.uniform2f(uni(nebula, 'u_par'), parx * 0.06, pary * 0.06); // 星云移得少
         gl.uniform3fv(uni(nebula, 'u_accent'), acc);
         gl.uniform1f(uni(nebula, 'u_audio'), au.level);
+        U.bindSeal(gl, nebula, w, h, 1);
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -184,6 +217,9 @@
         gl.uniform2f(uni(starProg, 'u_par'), parx * 0.1, pary * 0.1); // 星点移得多
         gl.uniform3fv(uni(starProg, 'u_accent'), acc);
         gl.uniform1f(uni(starProg, 'u_bass'), au.bass);
+        gl.uniform1f(uni(starProg, 'u_rot'), 1.0); // 繁星 + 北斗随天缓旋
+        gl.uniform1f(uni(starProg, 'u_jitter'), 0.0);
+        gl.uniform1f(uni(starProg, 'u_starmix'), 0.0); // 繁星保留冷暖变化
         gl.uniform1f(uni(starProg, 'u_bright'), 1.0);
         gl.bindVertexArray(stars);
         gl.drawArrays(gl.POINTS, 0, STAR_N);
@@ -191,11 +227,29 @@
         gl.uniform1f(uni(starProg, 'u_bright'), 2.2); // 北斗更亮
         gl.bindVertexArray(dipperStars);
         gl.drawArrays(gl.POINTS, 0, DIPPER.length);
+
+        // 圣号星宿：星光连缀成圣名，正立不随天旋，统一染成清亮五行色
+        var sl = window.XuanjiFx.seal;
+        if (sl.ready && sl.show && sl.points && sl.points.length) {
+          if (sealKey !== w + 'x' + h) buildSealStars();
+          if (sealVao) {
+            gl.uniform2f(uni(starProg, 'u_par'), 0.0, 0.0); // 圣号固定，不随视差平移（消除分层错位）
+            gl.uniform1f(uni(starProg, 'u_rot'), 0.0);
+            gl.uniform1f(uni(starProg, 'u_jitter'), 1.0); // 星子各自微漂，字形活起来
+            gl.uniform3f(uni(starProg, 'u_starcol'),
+              Math.min(1, acc[0] * 0.5 + 0.55), Math.min(1, acc[1] * 0.5 + 0.6), Math.min(1, acc[2] * 0.5 + 0.7));
+            gl.uniform1f(uni(starProg, 'u_starmix'), 1.0); // 纯净五行色星子，去彩虹杂点
+            gl.uniform1f(uni(starProg, 'u_bright'), 1.35);
+            gl.bindVertexArray(sealVao);
+            gl.drawArrays(gl.POINTS, 0, sealCount);
+          }
+        }
       },
       dispose: function () {
         [nebula, starProg, lineProg].forEach(function (p) {
           gl.deleteProgram(p);
         });
+        if (sealVao) gl.deleteVertexArray(sealVao);
       },
     };
   });
