@@ -44,22 +44,35 @@
 
   var UPDATE_FS = '#version 300 es\nprecision highp float;\nvoid main(){}';
 
+  // 速度上色：流场是位置的确定函数，render 时在粒子位置重算 curl 即得其漂移速率，
+  // 无需把速度存进 transform feedback（省一整套 buffer 改造）。pot/curl 与 UPDATE_VS 完全一致。
   var RENDER_VS =
     '#version 300 es\n' +
     'layout(location=0) in vec2 a_pos; layout(location=1) in float a_age;\n' +
-    'uniform float u_px;\n' +
-    'out float v_age;\n' +
+    'uniform float u_px; uniform float u_time;\n' +
+    'out float v_age; out float v_speed;\n' +
+    NOISE +
+    'float pot(vec2 p){return fbm(p*1.6+vec2(u_time*0.05,0.0));}\n' +
+    'vec2 curl(vec2 p){float e=0.01;\n' +
+    ' float dx=pot(p+vec2(e,0.0))-pot(p-vec2(e,0.0));\n' +
+    ' float dy=pot(p+vec2(0.0,e))-pot(p-vec2(0.0,e));\n' +
+    ' return vec2(dy,-dx)/(2.0*e);}\n' +
     'void main(){gl_Position=vec4(a_pos,0.0,1.0);\n' +
-    ' gl_PointSize=(1.2+1.8*fract(a_age*0.37))*u_px;v_age=a_age;}';
+    ' gl_PointSize=(1.2+1.8*fract(a_age*0.37))*u_px;\n' +
+    ' v_speed=clamp(length(curl(a_pos))*0.06,0.0,1.0);\n' + // 流场速率归一化到[0,1]
+    ' v_age=a_age;}';
 
   var RENDER_FS =
     '#version 300 es\nprecision highp float;\n' +
-    'in float v_age; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
+    'in float v_age; in float v_speed; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
     'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);if(r>0.5)discard;\n' +
     ' float glow=smoothstep(0.5,0.0,r);\n' +
     ' float fade=smoothstep(0.0,0.8,v_age)*(1.0-smoothstep(6.0,9.0,v_age));\n' +
-    ' vec3 col=mix(vec3(0.45,0.68,1.0),vec3(0.92,0.95,1.0),fract(v_age*0.2)*0.5);\n' + // 青白
-    ' frag=vec4(col*glow*fade*0.34*(1.0+u_bass*2.6),1.0);}'; // 降单颗粒亮度：密集叠加不易爆白
+    ' float sp=v_speed;\n' +
+    ' vec3 col=mix(vec3(0.34,0.46,0.74),vec3(0.96,0.98,1.0),sp);\n' + // 缓流暗靛(可见) → 疾流亮白
+    ' col=mix(col,u_accent,sp*sp*0.4);\n' + // 疾流染当日五行主色
+    ' float bright=0.42+sp*0.55;\n' + // 缓流≈原版亮度，疾流显著更亮，对比出层次
+    ' frag=vec4(col*glow*fade*bright*(1.0+u_bass*2.6),1.0);}';
 
   function compile(gl, type, src) {
     var s = gl.createShader(type);
@@ -157,6 +170,7 @@
     var gAccent = gl.getUniformLocation(glowProg, 'u_accent');
     var rAccent = gl.getUniformLocation(renderProg, 'u_accent');
     var rBass = gl.getUniformLocation(renderProg, 'u_bass');
+    var rTime = gl.getUniformLocation(renderProg, 'u_time');
 
     var uTime = gl.getUniformLocation(updateProg, 'u_time');
     var uDt = gl.getUniformLocation(updateProg, 'u_dt');
@@ -237,6 +251,7 @@
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
         gl.useProgram(renderProg);
         gl.uniform1f(rPx, px);
+        gl.uniform1f(rTime, t);
         gl.uniform3fv(rAccent, window.XuanjiFx.accent);
         gl.uniform1f(rBass, window.XuanjiFx.audio.bass);
         gl.bindVertexArray(write.vao);

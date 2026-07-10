@@ -63,7 +63,7 @@
     - **特效切换**（阶段二已正式化）：`XuanjiFx.select(name)`=`forced` 覆盖，现仅 `?fx=` 预览用；正式切换已并入 `bgtype`（托盘背景子菜单 / 设置下拉，走 `set_and_broadcast`→持久化）。⌃⌥→ 循环快捷键 + mac 全局键监听已移除（都是背景了，单给特效循环别扭）。`XUANJI_FX=<name>` 仍可 URL 强制预览。
     - **星盘时钟**：`enhanceClock` 给原表盘加性注入浑天仪叠层（同心环 + 二十八宿刻度 + 黄道/赤道斜环 + 十二地支）。地支按 **12 小时表盘上下午分组**（上午子—巳、下午午—亥，6 位置每 60°）落在时针对应钟点，`updateShichen` 按真实时间填充并高亮当前时辰；原阿拉伯数字/紫色读数经 JS 内联样式改掉；时钟块 `--clock-size:230`。
     - **UI 改造**（全部 fx-active 门控、JS 注入、stop 还原；开发用 `python3 -m http.server` + headless Chrome 截图迭代，非盲调）：`enhanceBazi` 八字命盘大四柱（年月日时，干上支下，五行色）；`enhanceProgress` 本日进度发光圆环；`enhanceSihua` 四化彩色药丸（禄绿/权紫/科蓝/忌红 + 小标）；`enhanceBento` 宜忌拉成通栏页脚、内容排成两列网格；玻璃卡片分层阴影 + 顶部内高光边；卡片随光标 3D 微倾斜(`tiltCards`)。
-    - ⏳ 待深化：flowfield 速度上色（现按 `v_age` 渐变，改按粒子速度染色）。（真流体墨、bento 布局已完成——`ink.js` 半拉格朗日平流真流体、`enhanceBento` 通栏页脚；WebGPU 增量评估后搁置，见「由来与核心决策」。）
+    - 特效打磨均已完成：flowfield 速度上色（`RENDER_VS` 按粒子位置重算 curl 得漂移速率，急流亮白染五行 accent / 缓流暗靛沉，不改 buffer）、真流体墨（`ink.js` 半拉格朗日平流）、bento 通栏页脚。WebGPU 增量评估后搁置（见「由来与核心决策」）。
   - 1.3 音频律动（✅ mac）：`audio.rs` 用 `cpal` 对默认输出设备 `build_input_stream`（自动 Core Audio process tap，无需授权、不弹框）→ `rustfft` 128 段对数分桶 → 事件循环每 33ms `evaluate_script` 下发。`we-shim.js` 的 `__xuanjiPushAudio` 同时喂 WE 回调与 `XuanjiFx.setAudio`（分 bass/mid/treble，attack 0.6/decay 0.2 平滑）。四特效各自律动：starfield 鼓点胀星+星云明灭、ink 音量涌墨、flowfield 鼓点加速冲刺+提亮、thunder 重拍云海轻闪+额外闪电（阈值门控防泛白）。⏳ Win WASAPI 待阶段三验证。
   - 1.4 视觉打磨：整体观感、过渡、默认配色，锁定「明显超过原版」。
 
@@ -93,4 +93,4 @@
 - **每屏独立配置（✅ mac）**：per-screen 覆盖层 + CGDisplayID 稳定屏键 + 作用范围选择器（详见阶段二 2.3）。
 - **资源内嵌（✅）**：rust-embed 嵌入 web/（详见阶段四 4.1）。
 - 门槛：clippy 零告警、fmt 干净、17 测过、svelte-check 零错。
-- **下一步**：阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、阶段一 ⏳ 待深化项（flowfield 速度上色）、开机自启（阶段四，需签名 `.app`）、每屏配置在设置窗打开时热插拔的屏列表刷新（当前仅开窗/切预设时刷新）。
+- **下一步**：阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、开机自启（阶段四，需签名 `.app`）、每屏配置在设置窗打开时热插拔的屏列表刷新（当前仅开窗/切预设时刷新）。
