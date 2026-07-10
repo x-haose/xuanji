@@ -535,6 +535,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+            // 退出时把壁纸窗从桌面层摘下 + 刷新桌面，清 WorkerW 残影（Windows）；mac no-op。
+            Event::LoopDestroyed => {
+                for s in &screens {
+                    os::detach_from_desktop(&s.window);
+                }
+                os::refresh_desktop();
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,

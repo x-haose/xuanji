@@ -73,7 +73,7 @@
   - 2.3 每屏独立配置（✅ mac）：`settings.rs` 加 per-screen 覆盖层，`resolved_for(screen)` = 默认 ⊕ 全局 ⊕ 该屏（该屏优先，即便等于 schema 默认也显式存不回落）。壳侧屏键取 **CGDisplayID**（`os::screen_id`，回落显示器名/序号——同型号双屏也各异不撞车）；设置窗注入屏列表 + 每屏解析值，Svelte 头部「作用范围」选择器（>1 屏才显示），`ipc.Set`/`Pick` 带 `screen` 目标。两条关键语义（皆为踩坑后定）：① **`screen_scope`：per-screen 仅多屏生效**，单屏一律走全局——否则多屏设过、拔屏变单屏的遗留覆盖会静默劫持画面且单屏 UI 无入口解除；② **`set(…, None)` = 所有屏统一**（托盘天生全局唯一，「所有屏」操作清掉各屏对该键的专属覆盖 + 设全局），只有显式选某屏才写专属——杜绝「所有屏」切不动有覆盖的屏。
 
 - **阶段三 · 跨平台（Windows）**
-  - 3.1 Windows 壁纸层：WorkerW（`0x052C`）+ `SetParent` + 24H2 时序防御 + 多屏 + 退出清理。
+  - 3.1 Windows 壁纸层（⏳ 代码完成，待真机实测）：`os/windows.rs` —— 给 Progman 发 `0x052C`（发多次+轮询等 WorkerW 出现，防 24H2 延迟就绪）→ `EnumWindows` 找 `SHELLDLL_DefView` 兄弟 `WorkerW` → 壁纸窗设 `WS_CHILD` + `WS_EX_TOOLWINDOW|NOACTIVATE|TRANSPARENT|LAYERED`（隐任务栏/不抢焦/点击穿透/可淡入）→ `SetParent` 挂上 → 按原屏坐标 `SetWindowPos` 铺满（-1/+2 补 WebView2 描边）；`set_alpha` 走 `SetLayeredWindowAttributes` 淡入；退出 `LoopDestroyed` 时逐窗 `SetParent(NULL)`+隐藏 + `SPI_SETDESKWALLPAPER` 刷新桌面清残影。**mac 交叉编译 `cargo check --target x86_64-pc-windows-msvc` + clippy 零告警通过；真机 WorkerW 时序 / 多屏坐标 / 穿透待实测。** ⏳ 未做：DWM 崩溃后自动重建、鼠标交互（`install_mouse_monitor` win 仍 None，特效自动跑无光标响应）、`screen_id`（win 仍 None，per-screen 键回落显示器名/序号）、设置窗毛玻璃（win `add_vibrancy` no-op）。
   - 3.2 Windows 音频：`cpal` WASAPI loopback 验证。
   - 3.3 Windows 上跑通设置/特效/音频全链路。
 

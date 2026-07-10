@@ -3,16 +3,35 @@
 #[cfg(target_os = "macos")]
 mod macos;
 
+#[cfg(target_os = "windows")]
+mod windows;
+
 /// 跨平台系统托盘（tray-icon）。见 `tray` 模块。
 pub mod tray;
 
 /// 将窗口挂到第 `screen_index` 块显示器的桌面壁纸层（图标背后、跨 Space、点击穿透，
-/// 并铺满该屏）。非 macOS 平台暂为 no-op —— Windows WorkerW 见 CLAUDE.md 阶段三。
+/// 并铺满该屏）。mac=沉 NSWindow 层，Windows=WorkerW 子窗；其它平台 no-op。
 pub fn attach_to_desktop(window: &tao::window::Window, screen_index: usize) {
     #[cfg(target_os = "macos")]
     macos::attach_to_desktop(window, screen_index);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    windows::attach_to_desktop(window, screen_index);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = (window, screen_index);
+}
+
+/// 退出前把壁纸窗从桌面层摘下（Windows: `SetParent(NULL)`+隐藏，防残影）。其它平台 no-op。
+pub fn detach_from_desktop(window: &tao::window::Window) {
+    #[cfg(target_os = "windows")]
+    windows::detach_from_desktop(window);
+    #[cfg(not(target_os = "windows"))]
+    let _ = window;
+}
+
+/// 摘下所有壁纸窗后刷新桌面壁纸，清 WorkerW 残影（Windows）。其它平台 no-op。
+pub fn refresh_desktop() {
+    #[cfg(target_os = "windows")]
+    windows::refresh_desktop();
 }
 
 /// 给透明窗口加 macOS 毛玻璃背衬（`NSVisualEffectView`）。非 macOS 暂为 no-op。
@@ -37,11 +56,13 @@ pub fn hide_dock() {
     macos::hide_dock();
 }
 
-/// 设置窗口整体不透明度（0.0=全透明，1.0=不透明）。非 macOS 暂为 no-op。
+/// 设置窗口整体不透明度（0.0=全透明，1.0=不透明），驱动淡入。其它平台 no-op。
 pub fn set_alpha(window: &tao::window::Window, alpha: f64) {
     #[cfg(target_os = "macos")]
     macos::set_alpha(window, alpha);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    windows::set_alpha(window, alpha);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = (window, alpha);
 }
 
