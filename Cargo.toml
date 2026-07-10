@@ -5,24 +5,28 @@ edition = "2024"
 
 [dependencies]
 cpal = "0.18.1"
+directories = "6.0.0"
+rfd = "0.17.2"
 rustfft = "6.4.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
 tao = "0.35"
-wry = "0.55"
+thiserror = "2.0.18"
+tray-icon = "0.24.1"
+wry = { version = "0.55", features = ["transparent"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
     "NSWindow",
     "NSResponder",
     "NSColor",
     "NSScreen",
     "NSEvent",
-    "NSStatusBar",
-    "NSStatusBarButton",
-    "NSStatusItem",
-    "NSMenu",
-    "NSMenuItem",
+    "NSView",
+    "NSVisualEffectView",
     "block2",
 ] }
 objc2-foundation = "0.3"

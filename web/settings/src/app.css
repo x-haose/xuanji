@@ -1,0 +1,286 @@
+:root {
+  --accent: #4fd1c5;
+  --bg: oklch(16% 0.02 260);
+  /* 暗纱：整窗统一的深色玻璃底，只留一丝通透（毛玻璃隐约透出后面）。 */
+  --bg-veil: oklch(16% 0.02 260 / 0.8);
+  /* 面板容器不再叠厚实暗底（会让各区透明度差太多），改用极淡提亮 + 描边区分，
+     全窗透明度因此一致。 */
+  --surface: oklch(100% 0 0 / 0.05);
+  --surface-2: oklch(100% 0 0 / 0.09);
+  --text: oklch(94% 0.01 260);
+  --text-dim: oklch(72% 0.02 260);
+  --border: oklch(100% 0 0 / 0.08);
+  --radius: 12px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  color: var(--text);
+  /* 一处极淡的顶部居中光晕（对称、不偏角），避免各区亮度差异。 */
+  background:
+    radial-gradient(130% 100% at 50% -20%, color-mix(in oklch, var(--accent) 7%, transparent), transparent 60%),
+    var(--bg-veil);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 18px;
+  gap: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+h1 span {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 左侧分组导航 */
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.06);
+}
+
+nav button {
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    background var(--ease) 200ms,
+    color var(--ease) 200ms;
+}
+nav button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+nav button.active {
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* 右侧参数面板 */
+.panel {
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.06);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.row:last-child {
+  border-bottom: none;
+}
+.label {
+  flex: 0 0 96px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+
+.panel .empty {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  padding: 24px 2px;
+}
+
+/* range */
+input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+output {
+  flex: 0 0 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* select */
+select {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* color */
+input[type='color'] {
+  inline-size: 46px;
+  block-size: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* toggle */
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.switch {
+  inline-size: 42px;
+  block-size: 24px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background var(--ease) 220ms;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  inline-size: 18px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform var(--ease) 220ms;
+}
+.switch.on {
+  background: color-mix(in oklch, var(--accent) 55%, transparent);
+}
+.switch.on::after {
+  transform: translateX(18px);
+  background: var(--text);
+}
+.toggle {
+  cursor: pointer;
+}
+
+/* filepick */
+.filepick {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.filepick .path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+button {
+  font-family: inherit;
+}
+.filepick button,
+.presets button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition:
+    background var(--ease) 180ms,
+    border-color var(--ease) 180ms,
+    transform var(--ease) 120ms;
+}
+.filepick button:hover,
+.presets button:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface-2));
+}
+.presets button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* presets bar */
+.presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.presets select,
+.presets input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.presets input {
+  inline-size: 110px;
+}
+.presets .reset {
+  margin-left: 4px;
+  border-color: color-mix(in oklch, oklch(60% 0.2 20) 40%, transparent);
+}

@@ -1,1 +1,8 @@
 /target
+
+# 实现计划（本地文档，不入库）
+/docs/plans/
+
+# 设置页前端构建产物与依赖
+/web/settings/node_modules/
+/web/settings/dist/

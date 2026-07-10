@@ -2,15 +2,18 @@
 //! 干支四化 Web 核心，并注入 WE shim 让页面「以为还在 Wallpaper Engine 里」。
 
 mod audio;
+mod ipc;
 mod os;
 mod protocol;
+mod settings;
 
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use tao::dpi::LogicalSize;
 use tao::event::{Event, StartCause, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget};
 use tao::window::{Window, WindowBuilder};
 use wry::{PageLoadEvent, WebView, WebViewBuilder};
 
@@ -29,21 +32,10 @@ enum UserEvent {
     PageLoaded(usize),
     /// 全局鼠标移动到屏幕坐标 (x, y)（点，左下原点）。
     MouseMoved(f64, f64),
-    /// 菜单栏选中第 i 个特效（0 = 原生背景）。
-    SwitchEffect(isize),
-    /// 快捷键循环到下一个特效。
-    CycleEffect,
-}
-
-/// 菜单项对应的特效 id（索引 0 = 空 = 回原生背景）。
-const EFFECT_IDS: [&str; 5] = ["", "starfield", "ink", "thunder", "flowfield"];
-
-/// 把指定特效 id 下发到所有屏（空字符串 = 回原生背景）。
-fn apply_effect(screens: &[Screen], id: &str) {
-    let js = format!("window.XuanjiFx&&XuanjiFx.select('{id}')");
-    for s in screens {
-        let _ = s.webview.evaluate_script(&js);
-    }
+    /// 托盘菜单指令。
+    Tray(os::tray::TrayCmd),
+    /// 设置窗控制消息。
+    Ipc(ipc::Msg),
 }
 
 /// 把 128 段频谱下发到所有屏（喂 WE 音频回调 + 特效律动）。
@@ -62,8 +54,195 @@ fn push_audio(screens: &[Screen], bands: &[f32]) {
     }
 }
 
+/// 把一批属性下发所有壁纸窗（走 WE 契约 applyUserProperties）。
+/// WE 契约：页面读 `props[key].value`，故每个标量值包成 `{value: ...}`。
+fn apply_props(screens: &[Screen], props: &serde_json::Map<String, serde_json::Value>) {
+    let wrapped: serde_json::Map<String, serde_json::Value> = props
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::json!({ "value": v })))
+        .collect();
+    let json = serde_json::Value::Object(wrapped);
+    let js =
+        format!("window.__xuanjiApplyUserProperties&&window.__xuanjiApplyUserProperties({json})");
+    for s in screens {
+        let _ = s.webview.evaluate_script(&js);
+    }
+}
+
+/// 改一个参数：校验更新 → 广播壁纸窗 → 落盘 →（设置窗开着则回填该字段）。
+/// 托盘切背景与设置窗改参数共用此路径，保证单一数据源一致。
+fn set_and_broadcast(
+    settings: &mut settings::Settings,
+    screens: &[Screen],
+    setwv: Option<&WebView>,
+    key: &str,
+    value: serde_json::Value,
+) {
+    match settings.set(key, value.clone()) {
+        Ok(()) => {
+            // 切背景类型须整体重应用（带上粒子等参数触发页面 needReinit 重建）；
+            // 普通改参只下发单键即可。
+            if key == "bgtype" {
+                apply_props(screens, &settings.resolved());
+            } else {
+                let mut one = serde_json::Map::new();
+                one.insert(key.to_string(), value.clone());
+                apply_props(screens, &one);
+            }
+            if let Err(e) = settings.save() {
+                eprintln!("[shell] 落盘失败: {e}");
+            }
+            if let Some(w) = setwv {
+                let _ = w.evaluate_script(&format!(
+                    "window.__xuanjiSetField&&window.__xuanjiSetField({},{})",
+                    serde_json::Value::String(key.to_string()),
+                    value
+                ));
+            }
+        }
+        Err(e) => eprintln!("[shell] set 拒绝: {e}"),
+    }
+}
+
+/// 把当前配置 + 预设列表注入设置窗（其加载完/切预设后调用）。
+fn init_settings_window(wv: &WebView, settings: &settings::Settings) {
+    let payload = serde_json::json!({
+        "values": settings.resolved(),
+        "presets": settings.presets(),
+    });
+    let _ = wv.evaluate_script(&format!(
+        "window.__xuanjiInitSettings&&window.__xuanjiInitSettings({payload})"
+    ));
+}
+
+/// 建一个普通（可见/有边框/正常层级/响应鼠标）设置窗，加载 Svelte 产物。
+/// 其 ipc_handler 解析控制消息经 proxy 送回事件循环。
+fn build_settings_window(
+    target: &EventLoopWindowTarget<UserEvent>,
+    web_dir: &Path,
+    proxy: EventLoopProxy<UserEvent>,
+) -> Result<(Window, WebView), Box<dyn Error>> {
+    let size = LogicalSize::new(980.0, 720.0);
+    let mut builder = WindowBuilder::new()
+        .with_title("璇玑 · 设置")
+        .with_inner_size(size)
+        .with_transparent(true);
+    // 居中到主屏（否则多屏时可能落在别的屏上「点了没看见」）。
+    if let Some(mon) = target.primary_monitor() {
+        let ms = mon.size();
+        let mp = mon.position();
+        let scale = mon.scale_factor();
+        let w = 980.0 * scale;
+        let h = 720.0 * scale;
+        let x = mp.x as f64 + (ms.width as f64 - w) / 2.0;
+        let y = mp.y as f64 + (ms.height as f64 - h) / 2.0;
+        builder = builder.with_position(tao::dpi::PhysicalPosition::new(x, y));
+    }
+    let window = builder.build(target)?;
+    os::add_vibrancy(&window);
+    let web_dir = web_dir.to_path_buf();
+    let webview = WebViewBuilder::new()
+        .with_transparent(true)
+        .with_custom_protocol("xuanji".into(), move |_id, req| {
+            protocol::serve(&web_dir, &req)
+        })
+        .with_ipc_handler(move |req| {
+            if let Some(msg) = ipc::parse(req.body()) {
+                let _ = proxy.send_event(UserEvent::Ipc(msg));
+            }
+        })
+        .with_url("xuanji://localhost/settings/dist/index.html")
+        .build(&window)?;
+    Ok((window, webview))
+}
+
+/// 把托盘背景子菜单的勾选同步到当前 bgtype。
+fn sync_tray_bg(tray: &Option<os::tray::TrayHandle>, settings: &settings::Settings) {
+    if let Some(t) = tray
+        && let Some(bg) = settings.resolved().get("bgtype").and_then(|v| v.as_str())
+    {
+        t.set_active(bg);
+    }
+}
+
+/// 处理设置窗来的一条 IPC 消息：更新配置 → 广播壁纸窗 → 落盘 → 回写设置窗/托盘。
+fn handle_ipc(
+    msg: ipc::Msg,
+    settings: &mut settings::Settings,
+    screens: &[Screen],
+    settings_win: &Option<(Window, WebView)>,
+    tray: &Option<os::tray::TrayHandle>,
+) {
+    use ipc::Msg;
+    let setwv = settings_win.as_ref().map(|(_, w)| w);
+    let persist = |s: &settings::Settings| {
+        if let Err(e) = s.save() {
+            eprintln!("[shell] 落盘失败: {e}");
+        }
+    };
+    match msg {
+        Msg::Ready => {
+            if let Some(w) = setwv {
+                init_settings_window(w, settings);
+            }
+        }
+        Msg::Set { key, value } => {
+            set_and_broadcast(settings, screens, setwv, &key, value);
+            if key == "bgtype" {
+                sync_tray_bg(tray, settings);
+            }
+        }
+        Msg::Pick { key, kind } => {
+            let picked = match kind {
+                ipc::PickKind::File => rfd::FileDialog::new().pick_file(),
+                ipc::PickKind::Directory => rfd::FileDialog::new().pick_folder(),
+            };
+            if let Some(path) = picked {
+                let val = serde_json::Value::String(path.to_string_lossy().into_owned());
+                set_and_broadcast(settings, screens, setwv, &key, val);
+            }
+        }
+        Msg::SavePreset { name } => {
+            settings.save_preset(&name);
+            persist(settings);
+            if let Some(w) = setwv {
+                init_settings_window(w, settings);
+            }
+        }
+        Msg::DeletePreset { name } => {
+            settings.delete_preset(&name);
+            persist(settings);
+            if let Some(w) = setwv {
+                init_settings_window(w, settings);
+            }
+        }
+        Msg::ApplyPreset { name } => {
+            if settings.apply_preset(&name) {
+                apply_props(screens, &settings.resolved());
+                persist(settings);
+                sync_tray_bg(tray, settings);
+                if let Some(w) = setwv {
+                    init_settings_window(w, settings);
+                }
+            }
+        }
+        Msg::Reset => {
+            settings.reset();
+            apply_props(screens, &settings.resolved());
+            persist(settings);
+            sync_tray_bg(tray, settings);
+            if let Some(w) = setwv {
+                init_settings_window(w, settings);
+            }
+        }
+    }
+}
+
 /// 音频推送节拍（约 30fps）。
 const AUDIO_TICK: Duration = Duration::from_millis(33);
+
+/// 显示器热插拔轮询间隔——每隔一会儿比对显示器排布，变化则重建壁纸窗。
+const SCREEN_CHECK: Duration = Duration::from_secs(2);
 
 /// 一块显示器对应的壁纸窗口及其淡入状态。
 struct Screen {
@@ -71,7 +250,99 @@ struct Screen {
     webview: WebView,
     /// 加载完成后待淡入的时刻；`None` 表示尚未收到加载完成。
     reveal_at: Option<Instant>,
+    /// 迟迟收不到加载完成时的兜底淡入时刻（各窗独立，热插拔新窗也从容淡入）。
+    fallback_at: Instant,
     revealed: bool,
+}
+
+/// 为第 `i` 块显示器建一个壁纸窗（沉桌面层、铺满、先透明待页面画好再淡入）。
+fn build_screen(
+    target: &EventLoopWindowTarget<UserEvent>,
+    web_dir: &Path,
+    url: &str,
+    proxy: &EventLoopProxy<UserEvent>,
+    i: usize,
+    monitor: Option<&tao::monitor::MonitorHandle>,
+    debug_top: bool,
+) -> Result<Screen, Box<dyn Error>> {
+    let mut builder = WindowBuilder::new()
+        .with_title("璇玑 Xuanji")
+        .with_decorations(false)
+        .with_always_on_top(debug_top)
+        .with_visible(false);
+    if let Some(m) = monitor {
+        builder = builder
+            .with_position(m.position())
+            .with_inner_size(m.size());
+    }
+    let window = builder.build(target)?;
+
+    let web_dir_owned = web_dir.to_path_buf();
+    let load_proxy = proxy.clone();
+    let webview = WebViewBuilder::new()
+        .with_background_color((46, 46, 46, 255))
+        .with_ipc_handler(|req| eprintln!("[web] {}", req.body()))
+        .with_custom_protocol("xuanji".into(), move |_id, request| {
+            protocol::serve(&web_dir_owned, &request)
+        })
+        .with_initialization_script(WE_SHIM)
+        .with_on_page_load_handler(move |event, _url| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = load_proxy.send_event(UserEvent::PageLoaded(i));
+            }
+        })
+        .with_url(url)
+        .build(&window)?;
+
+    if !debug_top {
+        os::attach_to_desktop(&window, i);
+    }
+    os::set_alpha(&window, 0.0);
+    window.set_visible(true);
+
+    Ok(Screen {
+        window,
+        webview,
+        reveal_at: None,
+        fallback_at: Instant::now() + REVEAL_FALLBACK,
+        revealed: false,
+    })
+}
+
+/// 当前显示器排布签名（位置+尺寸，顺序无关）——用于检测热插拔/重排。
+fn screens_signature(target: &EventLoopWindowTarget<UserEvent>) -> String {
+    let mut parts: Vec<String> = target
+        .available_monitors()
+        .map(|m| {
+            let p = m.position();
+            let s = m.size();
+            format!("{},{}:{}x{}", p.x, p.y, s.width, s.height)
+        })
+        .collect();
+    parts.sort();
+    parts.join("|")
+}
+
+/// 按当前显示器重建全部壁纸窗（热插拔/重排后调用）。旧窗随 `clear` 关闭。
+fn rebuild_screens(
+    target: &EventLoopWindowTarget<UserEvent>,
+    web_dir: &Path,
+    url: &str,
+    proxy: &EventLoopProxy<UserEvent>,
+    debug_top: bool,
+    screens: &mut Vec<Screen>,
+) {
+    screens.clear();
+    let monitors: Vec<Option<tao::monitor::MonitorHandle>> = {
+        let all: Vec<_> = target.available_monitors().map(Some).collect();
+        if all.is_empty() { vec![None] } else { all }
+    };
+    for (i, monitor) in monitors.iter().enumerate() {
+        match build_screen(target, web_dir, url, proxy, i, monitor.as_ref(), debug_top) {
+            Ok(s) => screens.push(s),
+            Err(e) => eprintln!("[shell] 显示器 {i} 重建失败: {e}"),
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -103,50 +374,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let proxy = event_loop.create_proxy();
     let mut screens: Vec<Screen> = Vec::with_capacity(monitors.len());
-    for (i, monitor) in monitors.into_iter().enumerate() {
-        let mut builder = WindowBuilder::new()
-            .with_title("璇玑 Xuanji")
-            .with_decorations(false)
-            .with_always_on_top(debug_top)
-            .with_visible(false);
-        if let Some(m) = &monitor {
-            builder = builder
-                .with_position(m.position())
-                .with_inner_size(m.size());
+    for (i, monitor) in monitors.iter().enumerate() {
+        match build_screen(
+            &event_loop,
+            &web_dir,
+            &url,
+            &proxy,
+            i,
+            monitor.as_ref(),
+            debug_top,
+        ) {
+            Ok(s) => screens.push(s),
+            Err(e) => eprintln!("[shell] 显示器 {i} 建窗失败: {e}"),
         }
-        let window = builder.build(&event_loop)?;
-
-        let web_dir = web_dir.clone();
-        let proxy = proxy.clone();
-        let webview = WebViewBuilder::new()
-            .with_background_color((46, 46, 46, 255))
-            .with_ipc_handler(|req| eprintln!("[web] {}", req.body()))
-            .with_custom_protocol("xuanji".into(), move |_id, request| {
-                protocol::serve(&web_dir, &request)
-            })
-            .with_initialization_script(WE_SHIM)
-            .with_on_page_load_handler(move |event, _url| {
-                if matches!(event, PageLoadEvent::Finished) {
-                    let _ = proxy.send_event(UserEvent::PageLoaded(i));
-                }
-            })
-            .with_url(&url)
-            .build(&window)?;
-
-        // 沉到第 i 块显示器的桌面壁纸层并铺满（调试置顶模式跳过）。
-        if !debug_top {
-            os::attach_to_desktop(&window, i);
-        }
-        // 先透明映射离屏渲染，页面画好再淡入，杜绝未绘制图层的白/蓝闪。
-        os::set_alpha(&window, 0.0);
-        window.set_visible(true);
-
-        screens.push(Screen {
-            window,
-            webview,
-            reveal_at: None,
-            revealed: false,
-        });
     }
 
     // 全局鼠标监视器：每次移动经 proxy 把屏幕坐标送回事件循环。token 需存活。
@@ -155,40 +395,42 @@ fn main() -> Result<(), Box<dyn Error>> {
         let _ = mouse_proxy.send_event(UserEvent::MouseMoved(x, y));
     });
 
-    // 菜单栏特效切换：须在 NSApp 启动完成后建，故推迟到事件循环首次 Init。句柄存活于闭包。
-    let menu_proxy = proxy.clone();
-    let mut menu: Option<Box<dyn std::any::Any>> = None;
+    // 系统托盘：须在事件循环就绪后建（macOS 依赖 NSApp），故推迟到首次 Init。句柄需存活。
+    let tray_proxy = proxy.clone();
+    let mut tray: Option<os::tray::TrayHandle> = None;
 
-    // 全局快捷键 ⌃⌥→ 循环下一个特效（需「输入监控」授权）。句柄需存活。
-    let key_proxy = proxy.clone();
-    let _key_monitor = os::install_key_monitor(move || {
-        let _ = key_proxy.send_event(UserEvent::CycleEffect);
-    });
-    let mut current_effect: usize = 0;
+    // 配置单一数据源 + 设置窗（懒建，单例）。
+    let mut settings = settings::Settings::load(settings::Settings::config_path());
+    let mut settings_win: Option<(Window, WebView)> = None;
 
     // 系统声音律动：loopback 捕获 + FFT，按节拍下发频谱。失败则静默降级。
     let audio = audio::start();
     let mut next_audio = Instant::now() + AUDIO_TICK;
 
-    let fallback = Instant::now() + REVEAL_FALLBACK;
-    event_loop.run(move |event, _, control_flow| {
+    // 显示器热插拔：记录初始排布签名，事件循环里定期比对，变化则重建壁纸窗。
+    let mut last_screens_sig = screens_signature(&event_loop);
+    let mut next_screen_check = Instant::now() + SCREEN_CHECK;
+
+    event_loop.run(move |event, target, control_flow| {
         match event {
             Event::NewEvents(StartCause::Init) => {
-                let mp = menu_proxy.clone();
-                menu = os::install_effect_menu(
-                    &[
-                        "原生背景",
-                        "星空 starfield",
-                        "水墨 ink",
-                        "雷法 thunder",
-                        "流场 flowfield",
-                    ],
-                    move |i| {
-                        let _ = mp.send_event(UserEvent::SwitchEffect(i));
-                    },
-                );
+                let tp = tray_proxy.clone();
+                let opts = settings::Settings::bgtype_options();
+                let current = settings
+                    .resolved()
+                    .get("bgtype")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                tray = os::tray::install(&opts, &current, move |cmd| {
+                    let _ = tp.send_event(UserEvent::Tray(cmd));
+                });
             }
             Event::UserEvent(UserEvent::PageLoaded(i)) => {
+                // 页面就绪即下发当前配置（壳侧为唯一配置来源）。
+                if let Some(s) = screens.get(i) {
+                    apply_props(std::slice::from_ref(s), &settings.resolved());
+                }
                 if let Some(s) = screens.get_mut(i)
                     && !s.revealed
                     && s.reveal_at.is_none()
@@ -196,15 +438,44 @@ fn main() -> Result<(), Box<dyn Error>> {
                     s.reveal_at = Some(Instant::now() + REVEAL_AFTER_LOAD);
                 }
             }
-            Event::UserEvent(UserEvent::SwitchEffect(i)) => {
-                if i >= 0 && (i as usize) < EFFECT_IDS.len() {
-                    current_effect = i as usize;
-                    apply_effect(&screens, EFFECT_IDS[current_effect]);
+            Event::UserEvent(UserEvent::Tray(cmd)) => {
+                use os::tray::TrayCmd;
+                match cmd {
+                    TrayCmd::SetBg(value) => {
+                        let setwv = settings_win.as_ref().map(|(_, w)| w);
+                        set_and_broadcast(
+                            &mut settings,
+                            &screens,
+                            setwv,
+                            "bgtype",
+                            serde_json::Value::String(value.clone()),
+                        );
+                        if let Some(t) = &tray {
+                            t.set_active(&value);
+                        }
+                    }
+                    TrayCmd::OpenSettings => {
+                        if let Some((w, _)) = &settings_win {
+                            os::focus_window(w);
+                        } else {
+                            match build_settings_window(target, &web_dir, proxy.clone()) {
+                                Ok(pair) => {
+                                    init_settings_window(&pair.1, &settings);
+                                    os::focus_window(&pair.0);
+                                    settings_win = Some(pair);
+                                }
+                                Err(e) => eprintln!("[shell] 设置窗创建失败: {e}"),
+                            }
+                        }
+                    }
+                    TrayCmd::Quit => {
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
                 }
             }
-            Event::UserEvent(UserEvent::CycleEffect) => {
-                current_effect = (current_effect + 1) % EFFECT_IDS.len();
-                apply_effect(&screens, EFFECT_IDS[current_effect]);
+            Event::UserEvent(UserEvent::Ipc(msg)) => {
+                handle_ipc(msg, &mut settings, &screens, &settings_win, &tray);
             }
             Event::UserEvent(UserEvent::MouseMoved(x, y)) => {
                 // 逐屏换算归一化坐标；仅把光标喂给它所在的屏，其余屏无更新 → 自然淡出。
@@ -220,19 +491,29 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
+                window_id,
                 ..
             } => {
-                *control_flow = ControlFlow::Exit;
-                return;
+                // 关设置窗只销毁它并切回纯菜单栏形态；关壁纸窗才退应用。
+                if settings_win
+                    .as_ref()
+                    .is_some_and(|(w, _)| w.id() == window_id)
+                {
+                    settings_win = None;
+                    os::hide_dock();
+                } else {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
             }
             _ => {}
         }
-        let _ = &menu; // 仅保活菜单栏句柄
+        let _ = &tray; // 仅保活托盘句柄
 
         // 到点（或兜底超时）淡入对应窗口。
         let now = Instant::now();
         for s in screens.iter_mut() {
-            if !s.revealed && now >= s.reveal_at.unwrap_or(fallback) {
+            if !s.revealed && now >= s.reveal_at.unwrap_or(s.fallback_at) {
                 os::set_alpha(&s.window, 1.0);
                 s.revealed = true;
             }
@@ -242,7 +523,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         *control_flow = match screens
             .iter()
             .filter(|s| !s.revealed)
-            .map(|s| s.reveal_at.unwrap_or(fallback))
+            .map(|s| s.reveal_at.unwrap_or(s.fallback_at))
             .min()
         {
             Some(next) => ControlFlow::WaitUntil(next),
@@ -258,5 +539,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             *control_flow = ControlFlow::WaitUntil(next_audio);
         }
+
+        // 显示器热插拔：定期比对排布，变化则重建全部壁纸窗（新屏建/去屏关/重排重贴）。
+        let now = Instant::now();
+        if now >= next_screen_check {
+            next_screen_check = now + SCREEN_CHECK;
+            let sig = screens_signature(target);
+            if sig != last_screens_sig {
+                last_screens_sig = sig;
+                rebuild_screens(target, &web_dir, &url, &proxy, debug_top, &mut screens);
+            }
+        }
+        // 保证按屏检查节拍唤醒（与淡入/音频取更早者）。
+        *control_flow = match *control_flow {
+            ControlFlow::Wait => ControlFlow::WaitUntil(next_screen_check),
+            ControlFlow::WaitUntil(t) => ControlFlow::WaitUntil(t.min(next_screen_check)),
+            other => other,
+        };
     });
 }

@@ -5,13 +5,13 @@
 use std::ptr::NonNull;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, NSObject};
-use objc2::{AnyThread, DefinedClass, MainThreadMarker, define_class, msg_send, sel};
+use objc2::runtime::AnyObject;
+use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuItem, NSScreen, NSStatusBar,
-    NSWindow, NSWindowCollectionBehavior,
+    NSApplication, NSApplicationActivationPolicy, NSAutoresizingMaskOptions, NSColor, NSEvent,
+    NSEventMask, NSScreen, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowOrderingMode,
 };
-use objc2_foundation::NSString;
 use tao::platform::macos::WindowExtMacOS;
 use tao::window::Window;
 
@@ -61,6 +61,59 @@ pub fn attach_to_desktop(window: &Window, screen_index: usize) {
     }
 }
 
+/// 给（透明的）窗口加一层 `NSVisualEffectView` 毛玻璃背衬，垫在 webview 之下。
+/// 设置窗因此呈现原生磨砂玻璃，而非直接透出杂乱桌面。
+pub fn add_vibrancy(window: &Window) {
+    let ptr = window.ns_window() as *const NSWindow;
+    // SAFETY: 同 attach_to_desktop —— tao 保证有效 NSWindow 指针，仅主线程借用。
+    let ns_window: &NSWindow = unsafe { &*ptr };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    // 关键：窗口须非不透明 + 清空底色，否则 BehindWindow 混合的毛玻璃无法透出后面内容，
+    // 会渲染成一块实心暗色（表现为设置窗「完全不透明」）。
+    ns_window.setOpaque(false);
+    ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+    let Some(content) = ns_window.contentView() else {
+        return;
+    };
+    let bounds = content.bounds();
+    let effect = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), bounds);
+    effect.setMaterial(NSVisualEffectMaterial::HUDWindow);
+    effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    effect.setState(NSVisualEffectState::Active);
+    effect.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    // 插到最底层（webview 之下），毛玻璃只作背衬不挡内容。
+    content.addSubview_positioned_relativeTo(&effect, NSWindowOrderingMode::Below, None);
+}
+
+/// 把设置窗带到前台并取得焦点。`.accessory` 应用无法抢前台，故临时切到 `.regular`
+/// 激活策略（会短暂出现 Dock 图标）+ 激活 App + `makeKeyAndOrderFront`。
+/// 关闭设置窗时调 `hide_dock` 切回 `.accessory`。
+pub fn focus_window(window: &Window) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    app.activate();
+    let ptr = window.ns_window() as *const NSWindow;
+    // SAFETY: 同 attach_to_desktop —— tao 保证有效 NSWindow 指针，仅主线程借用。
+    let ns_window: &NSWindow = unsafe { &*ptr };
+    ns_window.makeKeyAndOrderFront(None);
+}
+
+/// 设置窗关闭后切回 `.accessory`（无 Dock 图标，回到纯壁纸/菜单栏形态）。
+pub fn hide_dock() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    NSApplication::sharedApplication(mtm)
+        .setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+}
+
 /// 设置窗口整体不透明度。用于「先以 alpha=0 映射离屏渲染、页面画好再淡入」，
 /// 从根上消除启动时露出未绘制图层的闪屏（无论其底色来自窗口还是 WebView）。
 pub fn set_alpha(window: &Window, alpha: f64) {
@@ -81,79 +134,6 @@ pub fn install_mouse_monitor<F: Fn(f64, f64) + 'static>(on_move: F) -> Option<Re
         NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
         &block,
     )
-}
-
-struct MenuIvars {
-    on_select: Box<dyn Fn(isize)>,
-}
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[name = "XuanjiMenuTarget"]
-    #[ivars = MenuIvars]
-    struct MenuTarget;
-
-    impl MenuTarget {
-        /// 菜单项点击回调：按 tag(=特效索引)转发。
-        #[unsafe(method(onSelect:))]
-        fn on_select(&self, sender: &NSMenuItem) {
-            (self.ivars().on_select)(sender.tag());
-        }
-    }
-);
-
-impl MenuTarget {
-    fn new(cb: Box<dyn Fn(isize)>) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(MenuIvars { on_select: cb });
-        unsafe { msg_send![super(this), init] }
-    }
-}
-
-/// 在菜单栏放一个「璇玑」图标，菜单列出各特效；点击 → `on_select(索引)`。
-/// 返回的句柄(含状态项/菜单/target)须存活，否则菜单消失或点击无响应。
-pub fn install_effect_menu(
-    items: &[&str],
-    on_select: impl Fn(isize) + 'static,
-) -> Option<Box<dyn std::any::Any>> {
-    let mtm = MainThreadMarker::new()?;
-    let target = MenuTarget::new(Box::new(on_select));
-    let status = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0); // 可变宽度
-    if let Some(button) = status.button(mtm) {
-        button.setTitle(&NSString::from_str("☯ 璇玑"));
-    }
-    let menu = NSMenu::new(mtm);
-    for (i, name) in items.iter().enumerate() {
-        let mi = NSMenuItem::new(mtm);
-        mi.setTitle(&NSString::from_str(name));
-        mi.setTag(i as isize);
-        // SAFETY: target 存活于返回句柄中；action 选择子由 MenuTarget 实现。
-        unsafe {
-            mi.setTarget(Some(&target));
-            mi.setAction(Some(sel!(onSelect:)));
-        }
-        menu.addItem(&mi);
-    }
-    status.setMenu(Some(&menu));
-    Some(Box::new((status, menu, target)))
-}
-
-/// 安装全局快捷键监视器：按下 `⌃⌥→`(Control+Option+右箭头) 时回调。
-/// 需系统「输入监控」授权（键盘全局监听）。返回 token 须存活。
-pub fn install_key_monitor<F: Fn() + 'static>(on_hotkey: F) -> Option<Retained<AnyObject>> {
-    let block = block2::RcBlock::new(move |ev: NonNull<NSEvent>| {
-        // SAFETY: 全局监视器在回调期间提供有效 NSEvent。
-        let ev = unsafe { ev.as_ref() };
-        let flags = ev.modifierFlags();
-        let need = NSEventModifierFlags::Control | NSEventModifierFlags::Option;
-        // 右箭头 keyCode=124；要求恰按 ⌃⌥ 且未按 ⌘。
-        if ev.keyCode() == 124
-            && flags.contains(need)
-            && !flags.contains(NSEventModifierFlags::Command)
-        {
-            on_hotkey();
-        }
-    });
-    NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block)
 }
 
 /// 把全局屏幕坐标换算成第 `index` 块显示器内的归一化坐标（x 左→右、y 下→上，[0,1]）。

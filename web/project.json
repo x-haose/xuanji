@@ -8,7 +8,7 @@
 		{
 			"audiobass" : 
 			{
-				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0 && audioreactive.value",
 				"index" : 30,
 				"max" : 10,
 				"min" : 0,
@@ -19,7 +19,7 @@
 			},
 			"audioreactive" : 
 			{
-				"condition" : "bgtype.value === 'particles'",
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
 				"index" : 28,
 				"order" : 128,
 				"text" : "音频律动",
@@ -28,7 +28,7 @@
 			},
 			"audiosensitivity" : 
 			{
-				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0 && audioreactive.value",
 				"index" : 29,
 				"max" : 10,
 				"min" : 1,
@@ -39,7 +39,7 @@
 			},
 			"audiotreble" : 
 			{
-				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0 && audioreactive.value",
 				"index" : 31,
 				"max" : 10,
 				"min" : 0,
@@ -106,6 +106,22 @@
 					{
 						"label" : "轮播背景",
 						"value" : "slideshow"
+					},
+					{
+						"label" : "星汉灿烂",
+						"value" : "starfield"
+					},
+					{
+						"label" : "水墨氤氲",
+						"value" : "ink"
+					},
+					{
+						"label" : "雷霆万钧",
+						"value" : "thunder"
+					},
+					{
+						"label" : "流光星尘",
+						"value" : "flowfield"
 					}
 				],
 				"order" : 102,

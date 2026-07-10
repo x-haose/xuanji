@@ -32,9 +32,12 @@
     ipcLog('ONERROR', [e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')]);
   });
 
-  // 文档解析伊始就铺深色底，消除页面 CSS 默认白底在设置注入前的闪白。
+  // 防闪白底只给 html 不给 body（body 不透明会盖住负 z-index 的粒子层）。
+  // 且 WKWebView 不合成负 z-index 的 2D canvas，故把粒子/闪电层抬到非负层
+  // （仍在 z-index:10 的卡片之下）——否则原版粒子背景在本壳里整层不可见。
   var base = document.createElement('style');
-  base.textContent = 'html,body{background:#2e2e2e}';
+  base.textContent =
+    'html{background:#2e2e2e}#particles-js{z-index:0!important}#lightning-canvas{z-index:1!important}';
   (document.head || document.documentElement).appendChild(base);
 
   /// 页面通过它注册 128 段 FFT 回调（WE→页面 提供的 API）。
@@ -67,16 +70,6 @@
     if (l && typeof l.applyGeneralProperties === 'function') l.applyGeneralProperties(props);
   };
 
-  /// 复刻 WE「加载后下发一次全部属性」的行为：读 project.json 的默认值注入页面，
-  /// 使壁纸按原版配置渲染（深色底 + 深色主题），而非页面的白底代码兜底。
-  /// ponytail: M2 起改由壳侧持久化配置下发，此处 fetch 默认值作为过渡地基。
-  window.addEventListener('load', function () {
-    fetch('xuanji://localhost/project.json')
-      .then(function (r) { return r.json(); })
-      .then(function (cfg) {
-        var props = cfg && cfg.general && cfg.general.properties;
-        if (props) window.__xuanjiApplyUserProperties(props);
-      })
-      .catch(function () {});
-  });
+  // 配置下发权归壳侧：页面加载完成后由 Rust 壳读持久化配置调 __xuanjiApplyUserProperties
+  // 下发（含用户 overrides）。页面不再自 fetch 默认值，避免异步回冲壳注入的 overrides。
 })();

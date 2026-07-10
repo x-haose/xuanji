@@ -43,6 +43,15 @@
   var audio = { level: 0, bass: 0, mid: 0, treble: 0 };
   function setAudio(arr) {
     if (!arr || !arr.length) return;
+    // 尊重设置面板的音频参数（与粒子背景一致，这些是页面挂的全局变量）：
+    // 关闭律动则归零；否则按律动强度/低频/高频权重缩放。
+    if (window.audioReactive === false) {
+      audio.bass = audio.mid = audio.treble = audio.level = 0;
+      return;
+    }
+    var sens = typeof window.audioSensitivity === 'number' ? window.audioSensitivity : 1;
+    var bw = typeof window.audioBass === 'number' ? window.audioBass : 1;
+    var tw = typeof window.audioTreble === 'number' ? window.audioTreble : 1;
     var n = arr.length,
       bass = 0,
       mid = 0,
@@ -58,10 +67,10 @@
       else treble += v;
     }
     // 目标值 → 平滑到 audio（起快落慢，视觉顺）
-    var tb = bass / Math.max(1, b1),
-      tm = mid / Math.max(1, b2 - b1),
-      tt = treble / Math.max(1, n - b2),
-      tl = all / n;
+    var tb = (bass / Math.max(1, b1)) * sens * bw,
+      tm = (mid / Math.max(1, b2 - b1)) * sens,
+      tt = (treble / Math.max(1, n - b2)) * sens * tw,
+      tl = (all / n) * sens;
     audio.bass += (tb - audio.bass) * (tb > audio.bass ? 0.6 : 0.2);
     audio.mid += (tm - audio.mid) * (tm > audio.mid ? 0.6 : 0.2);
     audio.treble += (tt - audio.treble) * (tt > audio.treble ? 0.6 : 0.2);
