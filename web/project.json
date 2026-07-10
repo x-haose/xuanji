@@ -1,0 +1,531 @@
+{
+	"contentrating" : "Everyone",
+	"description" : "八字天干地支+紫微斗数四化+五运六气+万年历+个人十神日历（需在设置里设置自己的日干）壁纸。方便术数和玄学爱好者\r\n\r\n默认是RGB背景，觉得花里胡哨的可以切换背景类型，有很多背景类型可选：\r\n粒子效果\r\n渐变背景\r\n纯色背景\r\n图片背景\r\n视频背景\r\n轮播背景\r\n\r\n图片，视频，轮播可以自己选自己电脑里的图片，视频，文件夹作为背景。\r\n\r\n\r\n头顶的雷祖圣号可以选择显示和隐藏。（雷斋月建议开启）\r\n\r\n更多功能请自行探索。持续更新中...",
+	"file" : "干支四化流注.html",
+	"general" : 
+	{
+		"properties" : 
+		{
+			"audiobass" : 
+			{
+				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"index" : 30,
+				"max" : 10,
+				"min" : 0,
+				"order" : 130,
+				"text" : "低频响应",
+				"type" : "slider",
+				"value" : 5
+			},
+			"audioreactive" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 28,
+				"order" : 128,
+				"text" : "音频律动",
+				"type" : "bool",
+				"value" : true
+			},
+			"audiosensitivity" : 
+			{
+				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"index" : 29,
+				"max" : 10,
+				"min" : 1,
+				"order" : 129,
+				"text" : "律动强度",
+				"type" : "slider",
+				"value" : 5
+			},
+			"audiotreble" : 
+			{
+				"condition" : "bgtype.value === 'particles' && audioreactive.value",
+				"index" : 31,
+				"max" : 10,
+				"min" : 0,
+				"order" : 131,
+				"text" : "高频响应",
+				"type" : "slider",
+				"value" : 5
+			},
+			"bgcolor" : 
+			{
+				"condition" : "bgtype.value === 'color'",
+				"index" : 1,
+				"order" : 101,
+				"text" : "背景颜色",
+				"type" : "color",
+				"value" : "0.1803921568627451 0.1803921568627451 0.1803921568627451"
+			},
+			"bgdir" : 
+			{
+				"condition" : "bgtype.value === 'slideshow'",
+				"fileType" : "image",
+				"index" : 26,
+				"mode" : "fetchall",
+				"order" : 126,
+				"text" : "轮播图目录",
+				"type" : "directory",
+				"value" : ""
+			},
+			"bgimage" : 
+			{
+				"condition" : "bgtype.value === 'image'",
+				"fileType" : "image",
+				"index" : 4,
+				"order" : 104,
+				"text" : "背景图片",
+				"type" : "file",
+				"value" : ""
+			},
+			"bgtype" : 
+			{
+				"index" : 2,
+				"options" : 
+				[
+					{
+						"label" : "粒子效果",
+						"value" : "particles"
+					},
+					{
+						"label" : "渐变背景",
+						"value" : "gradient"
+					},
+					{
+						"label" : "纯色背景",
+						"value" : "color"
+					},
+					{
+						"label" : "图片背景",
+						"value" : "image"
+					},
+					{
+						"label" : "视频背景",
+						"value" : "video"
+					},
+					{
+						"label" : "轮播背景",
+						"value" : "slideshow"
+					}
+				],
+				"order" : 102,
+				"text" : "背景类型",
+				"type" : "combo",
+				"value" : "color"
+			},
+			"darktheme" : 
+			{
+				"index" : 3,
+				"order" : 103,
+				"text" : "暗色主题",
+				"type" : "bool",
+				"value" : true
+			},
+			"glassblur" : 
+			{
+				"index" : 5,
+				"max" : 10,
+				"min" : 1,
+				"order" : 105,
+				"text" : "玻璃模糊度",
+				"type" : "slider",
+				"value" : 1
+			},
+			"glassborder" : 
+			{
+				"index" : 6,
+				"max" : 10,
+				"min" : 0,
+				"order" : 106,
+				"text" : "玻璃边框",
+				"type" : "slider",
+				"value" : 1
+			},
+			"glassopacity" : 
+			{
+				"index" : 7,
+				"max" : 10,
+				"min" : 1,
+				"order" : 107,
+				"text" : "玻璃透明度",
+				"type" : "slider",
+				"value" : 3
+			},
+			"glasssaturation" : 
+			{
+				"index" : 8,
+				"max" : 10,
+				"min" : 1,
+				"order" : 108,
+				"text" : "玻璃饱和度",
+				"type" : "slider",
+				"value" : 1
+			},
+			"gradientangle" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 9,
+				"max" : 360,
+				"min" : 0,
+				"order" : 109,
+				"text" : "渐变角度",
+				"type" : "slider",
+				"value" : 135
+			},
+			"gradientcolor1" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 10,
+				"order" : 110,
+				"text" : "渐变色 ①",
+				"type" : "color",
+				"value" : "1.0 0.42 0.21"
+			},
+			"gradientcolor2" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 11,
+				"order" : 111,
+				"text" : "渐变色 ②",
+				"type" : "color",
+				"value" : "0.42 0.05 0.68"
+			},
+			"gradientcolor3" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 12,
+				"order" : 112,
+				"text" : "渐变色 ③",
+				"type" : "color",
+				"value" : "0.0 0.71 0.85"
+			},
+			"gradientspeed" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 13,
+				"max" : 30,
+				"min" : 1,
+				"order" : 113,
+				"text" : "渐变速度",
+				"type" : "slider",
+				"value" : 8
+			},
+			"gradienttype" : 
+			{
+				"condition" : "bgtype.value === 'gradient'",
+				"index" : 14,
+				"options" : 
+				[
+					{
+						"label" : "线性渐变",
+						"value" : "linear"
+					},
+					{
+						"label" : "径向渐变",
+						"value" : "radial"
+					},
+					{
+						"label" : "锥形渐变",
+						"value" : "conic"
+					}
+				],
+				"order" : 114,
+				"text" : "渐变类型",
+				"type" : "combo",
+				"value" : "conic"
+			},
+			"linedistance" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 15,
+				"max" : 350,
+				"min" : 50,
+				"order" : 115,
+				"text" : "连线距离",
+				"type" : "slider",
+				"value" : 120
+			},
+			"lineenable" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 16,
+				"order" : 116,
+				"text" : "粒子连线",
+				"type" : "bool",
+				"value" : true
+			},
+			"lineopacity" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 17,
+				"max" : 10,
+				"min" : 1,
+				"order" : 117,
+				"text" : "连线透明度",
+				"type" : "slider",
+				"value" : 4
+			},
+			"movedirection" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 18,
+				"options" : 
+				[
+					{
+						"label" : "随机",
+						"value" : "none"
+					},
+					{
+						"label" : "向上",
+						"value" : "top"
+					},
+					{
+						"label" : "向下",
+						"value" : "bottom"
+					},
+					{
+						"label" : "向左",
+						"value" : "left"
+					},
+					{
+						"label" : "向右",
+						"value" : "right"
+					},
+					{
+						"label" : "右上",
+						"value" : "top-right"
+					},
+					{
+						"label" : "左上",
+						"value" : "top-left"
+					},
+					{
+						"label" : "右下",
+						"value" : "bottom-right"
+					},
+					{
+						"label" : "左下",
+						"value" : "bottom-left"
+					}
+				],
+				"order" : 118,
+				"text" : "运动方向",
+				"type" : "combo",
+				"value" : "none"
+			},
+			"particlecolor" : 
+			{
+				"condition" : "bgtype.value === 'particles' && particlecolormode.value === 'solid'",
+				"index" : 33,
+				"order" : 133,
+				"text" : "粒子颜色",
+				"type" : "color",
+				"value" : "0.9607843137254902 0.9607843137254902 0.9607843137254902"
+			},
+			"particlecolormode" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 32,
+				"options" : 
+				[
+					{
+						"label" : "纯色",
+						"value" : "solid"
+					},
+					{
+						"label" : "RGB循环",
+						"value" : "rgbcycle"
+					}
+				],
+				"order" : 132,
+				"text" : "粒子配色",
+				"type" : "combo",
+				"value" : "solid"
+			},
+			"particlecount" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 19,
+				"max" : 250,
+				"min" : 10,
+				"order" : 119,
+				"text" : "粒子数量",
+				"type" : "slider",
+				"value" : 80
+			},
+			"particleopacity" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 20,
+				"max" : 10,
+				"min" : 1,
+				"order" : 120,
+				"text" : "粒子透明度",
+				"type" : "slider",
+				"value" : 5
+			},
+			"particlesize" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 21,
+				"max" : 20,
+				"min" : 1,
+				"order" : 121,
+				"text" : "粒子大小",
+				"type" : "slider",
+				"value" : 4
+			},
+			"particlespeed" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 22,
+				"max" : 10,
+				"min" : 1,
+				"order" : 122,
+				"text" : "运动速度",
+				"type" : "slider",
+				"value" : 2
+			},
+			"particlestyle" : 
+			{
+				"condition" : "bgtype.value === 'particles'",
+				"index" : 23,
+				"options" : 
+				[
+					{
+						"label" : "星空",
+						"value" : "starry"
+					},
+					{
+						"label" : "雪花",
+						"value" : "snow"
+					},
+					{
+						"label" : "几何网格",
+						"value" : "geometric"
+					},
+					{
+						"label" : "气泡",
+						"value" : "bubbles"
+					},
+					{
+						"label" : "光点",
+						"value" : "lightdots"
+					},
+					{
+						"label" : "流萤",
+						"value" : "firefly"
+					},
+					{
+						"label" : "雷法",
+						"value" : "thunder"
+					}
+				],
+				"order" : 123,
+				"text" : "粒子风格",
+				"type" : "combo",
+				"value" : "geometric"
+			},
+			"schemecolor" : 
+			{
+				"order" : 0,
+				"text" : "ui_browse_properties_scheme_color",
+				"type" : "color",
+				"value" : "0 0 0"
+			},
+			"showtitle" : 
+			{
+				"index" : 24,
+				"order" : 124,
+				"text" : "显示雷祖圣号",
+				"type" : "bool",
+				"value" : true
+			},
+			"slideshowinterval" : 
+			{
+				"condition" : "bgtype.value === 'slideshow'",
+				"index" : 27,
+				"max" : 300,
+				"min" : 5,
+				"order" : 127,
+				"text" : "轮播间隔(秒)",
+				"type" : "slider",
+				"value" : 30
+			},
+			"userRiGan" : 
+			{
+				"index" : 0,
+				"options" : 
+				[
+					{
+						"label" : "甲",
+						"value" : "甲"
+					},
+					{
+						"label" : "乙",
+						"value" : "乙"
+					},
+					{
+						"label" : "丙",
+						"value" : "丙"
+					},
+					{
+						"label" : "丁",
+						"value" : "丁"
+					},
+					{
+						"label" : "戊",
+						"value" : "戊"
+					},
+					{
+						"label" : "己",
+						"value" : "己"
+					},
+					{
+						"label" : "庚",
+						"value" : "庚"
+					},
+					{
+						"label" : "辛",
+						"value" : "辛"
+					},
+					{
+						"label" : "壬",
+						"value" : "壬"
+					},
+					{
+						"label" : "癸",
+						"value" : "癸"
+					}
+				],
+				"order" : 100,
+				"text" : "个人日干",
+				"type" : "combo",
+				"value" : "甲"
+			},
+			"videofile" : 
+			{
+				"condition" : "bgtype.value === 'video'",
+				"fileType" : "video",
+				"index" : 25,
+				"order" : 125,
+				"text" : "背景视频",
+				"type" : "file",
+				"value" : ""
+			}
+		},
+		"supportsaudioprocessing" : false
+	},
+	"preview" : "preview.gif",
+	"ratingsex" : "none",
+	"ratingviolence" : "none",
+	"snapshotformat" : 0,
+	"snapshotoverlay" : "",
+	"tags" : [ "Unspecified" ],
+	"title" : "八字紫微个人历 RGB",
+	"type" : "web",
+	"version" : 4,
+	"visibility" : "public",
+	"workshopid" : "3750508221",
+	"workshopurl" : "steam://url/CommunityFilePage/3750508221"
+}

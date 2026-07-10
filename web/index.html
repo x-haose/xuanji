@@ -1,0 +1,2259 @@
+﻿<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>东方自然科学信息艺术壁纸</title>
+    <style>
+        /* 使用系统字体（优先本地 Noto Serif SC，回退宋体/明朝体），不捆绑重型字体文件 */
+        @font-face {
+            font-family: 'Noto Serif SC';
+            font-style: normal;
+            font-weight: 300;
+            font-display: swap;
+            src: local('Noto Serif SC'), local('NotoSerifSC-Light');
+        }
+        @font-face {
+            font-family: 'Noto Serif SC';
+            font-style: normal;
+            font-weight: 400;
+            font-display: swap;
+            src: local('Noto Serif SC'), local('NotoSerifSC-Regular');
+        }
+        @font-face {
+            font-family: 'Noto Serif SC';
+            font-style: normal;
+            font-weight: 500;
+            font-display: swap;
+            src: local('Noto Serif SC'), local('NotoSerifSC-Medium');
+        }
+        @font-face {
+            font-family: 'Noto Serif SC';
+            font-style: normal;
+            font-weight: 600;
+            font-display: swap;
+            src: local('Noto Serif SC'), local('NotoSerifSC-SemiBold');
+        }
+        @font-face {
+            font-family: 'Noto Serif SC';
+            font-style: normal;
+            font-weight: 700;
+            font-display: swap;
+            src: local('Noto Serif SC'), local('NotoSerifSC-Bold');
+        }
+
+        :root {
+            /* 固定基准：3840×1600，由 #layout-root 的 scale 统一缩放 */
+            --font-size: 25.2px;
+            --gap: 56px;
+            --clock-size: 180px;
+            --primary-color: #6a5acd;
+            --secondary-color: #da70d6;
+            --accent-color: #20b2aa;
+            --dark-bg: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            --light-bg: linear-gradient(135deg, #f5f7fa, #e4e7f4, #d8e0f7);
+            --text-dark: #e6e6ff;
+            --text-light: #333366;
+            --transition: all 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+            /* Liquid Glass — Apple visionOS style */
+            --glass-alpha: 0.48;
+            --glass-blur: 18px;
+            --glass-saturate: 1.6;
+            --glass-border: 0.10;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: var(--font-size); line-height: 1.6;
+            overflow: hidden; transition: background-color 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), color 0.5s cubic-bezier(0.22, 0.61, 0.36, 1); position: relative;
+        }
+
+        /* ═══════════════════════════════════════════
+           核心缩放容器 — 3840×1600 固定画布
+           JS 动态设置 transform:scale() 适配任意屏幕
+           ═══════════════════════════════════════════ */
+        #layout-root {
+            position: absolute;
+            width: 3840px; height: 1600px;
+            top: 0; left: 0;
+            transform-origin: top left;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            gap: 24px;
+        }
+
+        #particles-js {
+            position: absolute; width: 100%; height: 100%;
+            top: 0; left: 0; z-index: -2;
+        }
+        #lightning-canvas {
+            position: absolute; width: 100%; height: 100%;
+            top: 0; left: 0; z-index: -1; pointer-events: none;
+        }
+
+
+
+        .animated-background-dark { background: var(--dark-bg); color: var(--text-dark); }
+        .animated-background-light { background: var(--light-bg); color: var(--text-light); }
+
+        .container {
+            display: flex; flex-direction: row; align-items: center; justify-content: center;
+            width: fit-content; max-width: 3600px; margin: 0 auto; padding: 30px; gap: var(--gap); z-index: 10;
+        }
+
+        .clock-wrapper { display: flex; flex-direction: column; align-items: center; gap: 0.5em; padding: 1em 1em; border-radius: 1em; position: fixed !important; top: clamp(15px, 1.875vh, 40px); right: 50px; z-index: 300; }
+
+        .analog-clock {
+            width: var(--clock-size); height: var(--clock-size);
+            border: 2px solid currentColor; border-radius: 50%; position: relative;
+            box-shadow: 0 0 25px rgba(106, 90, 205, 0.5); transition: var(--transition);
+            background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(5px);
+        }
+
+        .clock-face {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; z-index: 0;
+        }
+        .clock-face .tick-minor { stroke: rgba(255,255,255,0.12); }
+        .clock-face .tick-major { stroke: rgba(255,255,255,0.3); }
+        .clock-face .num { fill: rgba(255,255,255,0.45); }
+        .animated-background-light .clock-face .tick-minor { stroke: rgba(0,0,0,0.1); }
+        .animated-background-light .clock-face .tick-major { stroke: rgba(0,0,0,0.25); }
+        .animated-background-light .clock-face .num { fill: rgba(0,0,0,0.45); }
+
+        .analog-clock::before {
+            content: ''; position: absolute; width: 94%; height: 94%;
+            border-radius: 50%; top: 3%; left: 3%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hand {
+            position: absolute; background: currentColor;
+            transform-origin: bottom center; border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+            transition: transform 0.5s cubic-bezier(0.4, 2.3, 0.3, 1);
+            z-index: 1;
+        }
+
+        .hour-hand {
+            width: 6px; height: 35%; top: 15%; left: calc(50% - 3px);
+            background: linear-gradient(to top, var(--primary-color), var(--secondary-color));
+        }
+
+        .minute-hand {
+            width: 4px; height: 45%; top: 5%; left: calc(50% - 2px);
+            background: linear-gradient(to top, var(--secondary-color), var(--accent-color));
+        }
+
+        .second-hand {
+            width: 2px; height: 48%; top: 2%; left: calc(50% - 1px);
+            background: var(--accent-color);
+            transition: transform 0.05s linear;
+        }
+
+        .center-dot {
+            position: absolute; width: 12px; height: 12px; background: var(--accent-color);
+            border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 2; transition: var(--transition); box-shadow: 0 0 10px var(--accent-color);
+        }
+
+        .animated-background-light .center-dot {
+            background: var(--primary-color); box-shadow: 0 0 10px var(--primary-color);
+        }
+
+        .digital-clock {
+            font-size: 1.0em; font-weight: 300; letter-spacing: 0.1em;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color), var(--accent-color));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            padding: 0.4em 0.8em; border-radius: 0.6em;
+            white-space: nowrap;
+        }
+
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .floating { animation: float 6s ease-in-out infinite; will-change: transform; }
+
+        /* ═══════════════════════════════════════════
+           Apple Liquid Glass — visionOS design language
+           折射 / 高光边缘 / 深度层次
+           ═══════════════════════════════════════════ */
+        .liquid-glass {
+            position: relative;
+            background:
+                linear-gradient(135deg,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.18)) 0%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.06)) 25%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.02)) 55%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.10)) 100%
+                );
+            backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+            border: 1px solid rgba(255, 255, 255, var(--glass-border));
+            box-shadow:
+                0 10px 50px rgba(0, 0, 0, calc(var(--glass-alpha) * 0.65)),
+                0 2px 8px rgba(0, 0, 0, calc(var(--glass-alpha) * 0.3)),
+                inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-border) * 1.2)),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            transition: background 0.6s ease, border-color 0.6s ease;
+        }
+        /* 顶部镜面高光 — 液态玻璃的标志特征 */
+        .liquid-glass::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 10%; right: 10%; height: 1px;
+            background: linear-gradient(90deg,
+                transparent 0%,
+                rgba(255,255,255, calc(var(--glass-border) * 3)) 25%,
+                rgba(255,255,255, calc(var(--glass-border) * 5)) 50%,
+                rgba(255,255,255, calc(var(--glass-border) * 3)) 75%,
+                transparent 100%
+            );
+            z-index: 2; pointer-events: none;
+        }
+        /* 内部柔光 — 模拟厚度 */
+        .liquid-glass::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(
+                ellipse 70% 30% at 50% 0%,
+                rgba(255, 255, 255, calc(var(--glass-alpha) * 0.15)) 0%,
+                transparent 70%
+            );
+            pointer-events: none; z-index: 1;
+        }
+
+        #code.code-block {
+            width: fit-content; max-width: 3400px;
+            border-radius: 24px;
+            padding: 28px 32px;
+            font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif;
+            font-weight: 400;
+            letter-spacing: 0.02em;
+            line-height: 1.75;
+            z-index: 0;
+        }
+        /* 确保 code-block 内的子元素继承 liquid-glass z-index 层级 */
+        #code.code-block > div { position: relative; z-index: 3; }
+
+        .animated-background-light .liquid-glass {
+            background:
+                linear-gradient(135deg,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.45)) 0%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.22)) 40%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.10)) 70%,
+                    rgba(255,255,255, calc(var(--glass-alpha) * 0.30)) 100%
+                );
+            border-color: rgba(0, 0, 0, calc(var(--glass-border) * 0.5));
+            box-shadow:
+                0 10px 50px rgba(0, 0, 0, calc(var(--glass-alpha) * 0.2)),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.02);
+        }
+
+        .analog-clock {
+            background: none;
+            border-color: rgba(255, 255, 255, calc(var(--glass-border) * 1.2 + 0.15));
+            box-shadow:
+                0 4px 30px rgba(0, 0, 0, calc(var(--glass-alpha) * 0.4)),
+                inset 0 0 30px rgba(255, 255, 255, calc(var(--glass-alpha) * 0.06));
+        }
+        .animated-background-light .analog-clock {
+            border-color: rgba(0, 0, 0, calc(var(--glass-border) * 0.6));
+            box-shadow:
+                0 4px 30px rgba(0, 0, 0, calc(var(--glass-alpha) * 0.15)),
+                inset 0 0 30px rgba(255, 255, 255, calc(var(--glass-alpha) * 0.3));
+        }
+
+        /* ═══════════════════════════════════════════
+           老黄历信息面板 — 液态玻璃卡片
+           ═══════════════════════════════════════════ */
+        .huangli-panel {
+            /* 玻璃参数继承 :root（与上方 container 同一设计体系） */
+            width: fit-content; max-width: 3400px;
+            padding: 20px 30px;
+            border-radius: 24px;
+            font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif;
+            font-size: 0.82em;
+            letter-spacing: 0.03em;
+            line-height: 1.7;
+        }
+        .huangli-panel .hl-row {
+            display: flex; flex-wrap: wrap; gap: 16px 32px;
+            position: relative; z-index: 3;
+        }
+        .huangli-panel .hl-section {
+            flex: 1 1 auto; min-width: 140px;
+        }
+        .huangli-panel .hl-label {
+            font-size: 0.75em; opacity: 0.55; text-transform: uppercase;
+            letter-spacing: 0.1em; margin-bottom: 4px;
+        }
+        .huangli-panel .hl-chongsha {
+            font-weight: 600; font-size: 1.15em;
+        }
+        .huangli-panel .hl-chongsha .sha {
+            margin-left: 12px; opacity: 0.8;
+        }
+        .huangli-panel .hl-pengzu {
+            font-size: 0.95em; line-height: 1.6;
+        }
+        .huangli-panel .hl-shen-pos {
+            display: flex; gap: 18px; flex-wrap: wrap;
+        }
+        .huangli-panel .hl-shen-item {
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .huangli-panel .hl-shen-item .shen-icon {
+            font-size: 0.7em; opacity: 0.5; margin-bottom: 2px;
+        }
+        .huangli-panel .hl-xiongsha .xiong-list {
+            color: #ef9a9a; font-size: 0.9em;
+        }
+        .huangli-panel .hl-yiji {
+            display: flex; gap: 28px; flex-wrap: wrap;
+        }
+        .huangli-panel .hl-yi, .huangli-panel .hl-ji {
+            flex: 1 1 200px;
+        }
+        .huangli-panel .hl-yi .item { color: #4caf50; }
+        .huangli-panel .hl-ji .item { color: #ef5350; }
+        .huangli-panel .hl-divider {
+            border: none; border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 12px 0; position: relative; z-index: 3;
+        }
+        .animated-background-light .huangli-panel .hl-divider {
+            border-top-color: rgba(0,0,0,0.06);
+        }
+
+        .dao-title {
+            position: fixed; top: 0; left: 0; width: 100%;
+            text-align: center;
+            padding: clamp(20px, 2.5vh, 48px) 0;
+            z-index: 200; pointer-events: none;
+        }
+
+        .dao-title h1 {
+            font-weight: 600; letter-spacing: 4px;
+            font-size: clamp(30px, 3.2vh, 55px);
+            background: linear-gradient(90deg, #ffd700, #ff8c00, #ff4500, #ff8c00, #ffd700);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            text-shadow: 0 0 10px rgba(255, 140, 0, 0.3);
+        }
+
+        .dao-title p { margin-top: 5px; color: #da70d6; opacity: 0.8; font-size: clamp(12px, 1.2vh, 22px); }
+
+        /* daoTitleGlow 已改为 JS 驱动（~10fps），不再使用 CSS animation 60fps */
+
+        /* ═══════════════════════════════════════════
+           新增右侧面板 — 万年历 + 综合评分
+           ═══════════════════════════════════════════ */
+        .content-row {
+            display: flex; flex-direction: row; gap: 24px;
+            align-items: stretch; justify-content: center;
+            flex-wrap: wrap; max-width: 3600px;
+        }
+
+        .score-panel {
+            width: fit-content; max-width: 3400px;
+            border-radius: 24px; padding: 24px 32px;
+            font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+            display: flex; flex-direction: column; gap: 14px;
+            z-index: 0; position: relative;
+        }
+        .score-panel > * { position: relative; z-index: 3; }
+
+        /* 日历区域 */
+        .calendar-section { text-align: center; }
+        .calendar-title {
+            font-size: 1.05em; font-weight: 600; margin-bottom: 10px;
+            letter-spacing: 0.05em; opacity: 0.9;
+        }
+        .calendar-weekdays {
+            display: grid; grid-template-columns: repeat(7, 1fr);
+            gap: 2px; margin-bottom: 4px; font-size: 0.72em;
+            opacity: 0.55; font-weight: 500;
+        }
+        .calendar-weekdays span { text-align: center; padding: 2px 0; }
+        .calendar-weekdays span:first-child,
+        .calendar-weekdays span:last-child { color: #ef5350; }
+        .calendar-grid {
+            display: grid; grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+        .calendar-cell {
+            min-height: 46px; min-width: 46px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            border-radius: 8px; font-size: 0.75em;
+            border: 1px solid rgba(255,255,255,0.06);
+            transition: all 0.25s ease; cursor: default;
+            background: rgba(255,255,255,0.03);
+            line-height: 1.3;
+        }
+        .calendar-cell .day-num { font-size: 1.05em; font-weight: 600; }
+        .calendar-cell .day-ganzhi { font-size: 0.78em; opacity: 0.85; margin-top: 1px; }
+        .calendar-cell .day-shishen { font-size: 0.65em; opacity: 0.7; margin-top: 1px; white-space: nowrap; }
+        .calendar-cell.today {
+            border: 2px solid #409EFF !important;
+            box-shadow: 0 0 14px rgba(64,158,255,0.35), inset 0 0 8px rgba(64,158,255,0.08);
+            background: rgba(64,158,255,0.08);
+        }
+        /* 上月/下月填充格淡化 */
+        .calendar-cell.filler {
+            opacity: 0.30; filter: grayscale(0.5);
+        }
+        .calendar-cell.filler .day-num { color: inherit; opacity: 1; }
+        .calendar-cell.filler .day-ganzhi { opacity: 0.7; }
+        .calendar-cell.filler .day-shishen { opacity: 0.7; }
+
+        .animated-background-light .calendar-cell.filler {
+            opacity: 0.25; filter: grayscale(0.45);
+        }
+
+        /* 日柱十神明细区域 — 双栏布局 */
+        .shishen-section {
+            display: flex; flex-direction: row; gap: 28px;
+            font-size: 0.82em; line-height: 2;
+            letter-spacing: 0.04em; position: relative; z-index: 3;
+        }
+        .shishen-section .ss-col {
+            flex: 1; min-width: 0;
+        }
+        .shishen-section .ss-title {
+            font-size: 0.78em; opacity: 0.5; letter-spacing: 0.1em;
+            margin-bottom: 4px; text-transform: uppercase;
+        }
+        .shishen-section .ss-row {
+            padding-left: 8px; white-space: nowrap;
+        }
+        .shishen-section .ss-label {
+            opacity: 0.45; margin-right: 6px; font-size: 0.85em;
+        }
+        .shishen-section .ss-result {
+            font-weight: 600;
+        }
+
+        .animated-background-light .calendar-cell {
+            border-color: rgba(0,0,0,0.06); background: rgba(0,0,0,0.02);
+        }
+        .animated-background-light .calendar-cell.today {
+            border-color: #1890ff !important;
+            background: rgba(24,144,255,0.06);
+            box-shadow: 0 0 12px rgba(24,144,255,0.18);
+        }
+
+        /* 纯色/图片/视频背景：彻底移除 backdrop-filter，释放 CEF 合成器资源 */
+        .no-glass-blur .liquid-glass,
+        .no-glass-blur .analog-clock {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+    </style>
+</head>
+<body class="animated-background-dark" style="overflow:hidden;">
+
+<div id="particles-js"></div>
+<canvas id="lightning-canvas"></canvas>
+
+<div class="dao-title" id="dao-title">
+    <h1>九天应元雷声普化天尊</h1>
+    <p>玉枢宝经 · 雷祖圣号</p>
+</div>
+
+<div id="layout-root">
+
+<div class="container">
+    <div class="content-row">
+        <div id="code" class="liquid-glass code-block">
+          <div id="code-tiangan"><span class="code">天干</span>: <span id="code-gan-year"></span> &nbsp;<span id="code-gan-month"></span> &nbsp;<span id="code-gan-day"></span> &nbsp;<span id="code-gan-hour"></span></div>
+          <div id="code-dizhi"><span class="code">地支</span>: <span id="code-zhi-year"></span> &nbsp;<span id="code-zhi-month"></span> &nbsp;<span id="code-zhi-day"></span> &nbsp;<span id="code-zhi-hour"></span></div>
+          <div id="code-date"><span class="code">日期</span>: </div>
+          <div id="code-lunar"><span class="code">农历</span>: </div>
+          <div id="code-sihua-year"><span class="code">流年四化</span>: </div>
+          <div id="code-sihua-month"><span class="code">流月四化</span>: </div>
+          <div id="code-sihua-day"><span class="code">流日四化</span>: </div>
+          <div id="code-sihua-hour"><span class="code">流时四化</span>: </div>
+          <div id="code-term"><span class="code">节气</span>: </div>
+          <div id="code-wuyun"><span class="code">五运</span>: </div>
+          <div id="code-liuqi"><span class="code">六气（主|客）</span>: </div>
+          <div id="code-sitian"><span class="code">司天（主|客）</span>: </div>
+          <div id="code-zaiquan"><span class="code">在泉（主|客）</span>: </div>
+          <div id="code-ziwu"><span class="code">子午流注</span>: </div>
+          <div id="code-progress"><span class="code">本日进度</span>: </div>
+        </div>
+        <div id="score-panel" class="score-panel liquid-glass">
+            <div class="calendar-section" id="calendar-section"></div>
+            <div class="shishen-section" id="shishen-section"></div>
+        </div>
+    </div>
+</div>
+
+<div class="container" style="padding-top:12px;">
+    <div id="huangli-panel" class="huangli-panel liquid-glass"></div>
+</div>
+
+</div><!-- /#layout-root -->
+
+<script>
+// === 错误捕获面板（在任何外部脚本之前设置） ===
+// 使用独立 overlay，不摧毁 #code 内容
+(function() {
+    var errOverlay = document.createElement('div');
+    errOverlay.id = 'error-overlay';
+    errOverlay.style.cssText = 'display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;max-width:90vw;padding:18px 28px;border-radius:14px;background:rgba(30,0,0,0.92);border:1px solid rgba(255,60,60,0.5);color:#ff6b6b;font-family:monospace;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-all;pointer-events:none;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 8px 40px rgba(0,0,0,0.6);';
+    document.documentElement.insertBefore(errOverlay, document.body);
+
+    window.onerror = function(msg, url, line, col, err) {
+        errOverlay.textContent = '⚠ JS ERROR: ' + msg + ' (行' + line + ':' + col + ')\n' +
+            (err && err.stack ? err.stack.split('\n').slice(0,5).join('\n') : '');
+        errOverlay.style.display = 'block';
+        setTimeout(function() { errOverlay.style.display = 'none'; }, 12000);
+        return false;
+    };
+})();
+</script>
+<script src="particles.min.js"></script>
+<script type="text/javascript" src="LunarCalendar.min.js"></script>
+<script src="assets/js/lunar.js"></script>
+
+<script>
+// === 启动检查 + lunar.js 加载超时保护 ===
+(function() {
+    var c = document.getElementById('code');
+    if (c) {
+        c.style.display = 'block';
+        if (c.children.length === 0) { c.innerHTML = '等待初始化...'; }
+    }
+    // lunar.js (425KB) 加载超时保护：同步加载失败或极慢时给出提示
+    var _lunarTimeout = setTimeout(function() {
+        if (typeof Lunar === 'undefined') {
+            var panel = document.getElementById('huangli-panel');
+            if (panel) panel.innerHTML = '<span style="opacity:0.5;z-index:3;position:relative;">黄历库加载失败，请重启壁纸</span>';
+        }
+    }, 10000);
+    // 加载成功则清除超时
+    var _lunarCheck = setInterval(function() {
+        if (typeof Lunar !== 'undefined') { clearTimeout(_lunarTimeout); clearInterval(_lunarCheck); }
+    }, 500);
+})();
+
+// 干支地图
+const ziwuLiuZhuMap = {
+    '子': '足少阳胆经', '丑': '足厥阴肝经', '寅': '手太阴肺经', '卯': '手阳明大肠经',
+    '辰': '足阳明胃经', '巳': '足太阴脾经', '午': '手少阴心经', '未': '手太阳小肠经',
+    '申': '足太阳膀胱经', '酉': '足少阴肾经', '戌': '手厥阴心包经', '亥': '手少阳三焦经'
+};
+
+const tianganWuxingColor = {
+    '甲': '#00e079', '乙': '#00e079',
+    '丙': '#ed5736', '丁': '#ed5736',
+    '戊': 'hsl(26, 35%, 54%)', '己': 'hsl(26, 35%, 54%)',
+    '庚': '#FFD700', '辛': '#FFD700',
+    '壬': '#409EFF', '癸': '#409EFF'
+};
+
+const dizhiWuxingColor = {
+    '子': '#409EFF', '丑': 'hsl(26, 35%, 54%)',
+    '寅': '#00e079', '卯': '#00e079',
+    '辰': 'hsl(26, 35%, 54%)', '巳': '#ed5736',
+    '午': '#ed5736', '未': 'hsl(26, 35%, 54%)',
+    '申': '#FFD700', '酉': '#FFD700',
+    '戌': 'hsl(26, 35%, 54%)', '亥': '#409EFF'
+};
+
+const sihuaMap = {
+    '甲': {禄: '廉贞', 权: '破军', 科: '武曲', 忌: '太阳'},
+    '乙': {禄: '天机', 权: '天梁', 科: '紫微', 忌: '太阴'},
+    '丙': {禄: '天同', 权: '天机', 科: '文昌', 忌: '廉贞'},
+    '丁': {禄: '太阴', 权: '天同', 科: '天机', 忌: '巨门'},
+    '戊': {禄: '贪狼', 权: '太阴', 科: '右弼', 忌: '天机'},
+    '己': {禄: '武曲', 权: '贪狼', 科: '天梁', 忌: '文曲'},
+    '庚': {禄: '太阳', 权: '武曲', 科: '太阴', 忌: '天同'},
+    '辛': {禄: '巨门', 权: '太阳', 科: '文曲', 忌: '文昌'},
+    '壬': {禄: '天梁', 权: '紫微', 科: '左辅', 忌: '武曲'},
+    '癸': {禄: '破军', 权: '巨门', 科: '太阴', 忌: '贪狼'}
+};
+
+var _timeState = { lastDate: '', lastHour: -1 };
+
+function _updateHourNodes(year, month, day, hours, numberColor) {
+    const tiangan = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+    const dizhi = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+
+    let targetDateForDayGan = new Date(year, month - 1, day);
+    if (hours === 23) { targetDateForDayGan.setDate(targetDateForDayGan.getDate() + 1); }
+    const lunarInfoForDayGan = LunarCalendar.solarToLunar(
+        targetDateForDayGan.getFullYear(), targetDateForDayGan.getMonth() + 1, targetDateForDayGan.getDate()
+    );
+    const ganzhiDay = lunarInfoForDayGan.GanZhiDay;
+    const riGan = ganzhiDay.charAt(0);
+    const riGanIndex = tiangan.indexOf(riGan);
+    const dizhiHourIndex = (hours === 23) ? 0 : Math.floor((hours + 1) / 2) % 12;
+    const shiGanIndex = (riGanIndex * 2 + dizhiHourIndex) % 10;
+    const ganzhiHour = tiangan[shiGanIndex] + dizhi[dizhiHourIndex];
+    const hourTianGan = ganzhiHour.charAt(0);
+    const hourDiZhi = ganzhiHour.charAt(1);
+
+    var ganH = document.getElementById('code-gan-hour');
+    var zhiH = document.getElementById('code-zhi-hour');
+    if (ganH) { ganH.textContent = hourTianGan; ganH.style.color = tianganWuxingColor[hourTianGan]; }
+    if (zhiH) { zhiH.textContent = hourDiZhi; zhiH.style.color = dizhiWuxingColor[hourDiZhi]; }
+
+    const hourSihua = sihuaMap[hourTianGan];
+    var sihuaHEl = document.getElementById('code-sihua-hour');
+    if (sihuaHEl && hourSihua) {
+        sihuaHEl.innerHTML = '<span class="code">流时四化</span>: '
+            + '<span style="color: #67C23A;">' + hourSihua.禄 + '</span>  '
+            + '<span style="color: #EE82EE;">' + hourSihua.权 + '</span>  '
+            + '<span style="color: #409EFF;">' + hourSihua.科 + '</span>  '
+            + '<span style="color: #F56C6C;">' + hourSihua.忌 + '</span>';
+    }
+
+    var ziwuEl = document.getElementById('code-ziwu');
+    if (ziwuEl) {
+        var ziwuLiuZhu = ziwuLiuZhuMap[hourDiZhi];
+        ziwuEl.innerHTML = '<span class="code">子午流注</span>: <span class="number" style="color: ' + numberColor + '">' + ziwuLiuZhu + '</span>';
+    }
+}
+
+function _buildDayNodes(year, month, day, hours, numberColor) {
+    const now = new Date(year, month - 1, day, hours);
+    const weekDays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+    const dayOfWeek = weekDays[now.getDay()];
+
+    const lunarInfo = LunarCalendar.solarToLunar(year, month, day);
+    const ganzhiYear = lunarInfo.GanZhiYear;
+    const ganzhiMonth = lunarInfo.GanZhiMonth;
+    const ganzhiDay = lunarInfo.GanZhiDay;
+    const lunarMonthStr = lunarInfo.lunarMonthName;
+    const lunarDayStr = lunarInfo.lunarDayName;
+
+    // --- 日期 ---
+    var viewDate = year + '-' + String(month).padStart(2,'0') + '-' + String(day).padStart(2,'0') + ' ' + dayOfWeek;
+    var dateEl = document.getElementById('code-date');
+    if (dateEl) {
+        dateEl.innerHTML = '<span class="code">日期</span>: <span class="number" style="color: ' + numberColor + '">' + viewDate + '</span>';
+    }
+
+    // --- 农历 ---
+    var spec = '';
+    if (lunarDayStr === '初一' || lunarDayStr === '十五') spec = 'normal';
+    else if (lunarMonthStr === '五月') {
+        var s = ['初五','初六','初七','十五','十六','十七','廿五','廿六','廿七'];
+        if (s.indexOf(lunarDayStr) !== -1) spec = 'jiudu';
+    } else if ((lunarMonthStr === '三月' && lunarDayStr === '初九') ||
+        (lunarMonthStr === '六月' && lunarDayStr === '初二') ||
+        (lunarMonthStr === '九月' && lunarDayStr === '初六') ||
+        (lunarMonthStr === '十二月' && lunarDayStr === '初二')) {
+        spec = 'huafu';
+    }
+    var lunarDate = ganzhiYear + lunarInfo.zodiac + '年 ' + lunarMonthStr + lunarDayStr;
+    var lunarHTML;
+    if (spec === 'normal') { lunarHTML = '<span style="color: #F56C6C;">' + lunarDate + '</span>'; }
+    else if (spec === 'jiudu') { lunarHTML = '<span style="color: #F56C6C;">' + lunarDate + '|九毒日</span>'; }
+    else if (spec === 'huafu') { lunarHTML = '<span style="color: #F56C6C;">' + lunarDate + '|画符禁忌日</span>'; }
+    else { lunarHTML = lunarDate; }
+    var lunarEl = document.getElementById('code-lunar');
+    if (lunarEl) {
+        lunarEl.innerHTML = '<span class="code">农历</span>: <span class="number" style="color: ' + numberColor + '">' + lunarHTML + '</span>';
+    }
+
+    // --- 天干 / 地支 year/month/day ---
+    var yearTianGan = ganzhiYear.charAt(0), yearDiZhi = ganzhiYear.charAt(1);
+    var monthTianGan = ganzhiMonth.charAt(0), monthDiZhi = ganzhiMonth.charAt(1);
+    var dayTianGan = ganzhiDay.charAt(0), dayDiZhi = ganzhiDay.charAt(1);
+
+    var ganY = document.getElementById('code-gan-year'), ganM = document.getElementById('code-gan-month'), ganD = document.getElementById('code-gan-day');
+    var zhiY = document.getElementById('code-zhi-year'), zhiM = document.getElementById('code-zhi-month'), zhiD = document.getElementById('code-zhi-day');
+    if (ganY) { ganY.textContent = yearTianGan; ganY.style.color = tianganWuxingColor[yearTianGan]; }
+    if (ganM) { ganM.textContent = monthTianGan; ganM.style.color = tianganWuxingColor[monthTianGan]; }
+    if (ganD) { ganD.textContent = dayTianGan; ganD.style.color = tianganWuxingColor[dayTianGan]; }
+    if (zhiY) { zhiY.textContent = yearDiZhi; zhiY.style.color = dizhiWuxingColor[yearDiZhi]; }
+    if (zhiM) { zhiM.textContent = monthDiZhi; zhiM.style.color = dizhiWuxingColor[monthDiZhi]; }
+    if (zhiD) { zhiD.textContent = dayDiZhi; zhiD.style.color = dizhiWuxingColor[dayDiZhi]; }
+
+    // --- 四化 year/month/day ---
+    var yearSihua = sihuaMap[yearTianGan];
+    var monthSihua = sihuaMap[monthTianGan];
+    var riGan = ganzhiDay.charAt(0);
+    var daySihua = sihuaMap[riGan];
+    function fmtSihua(s) {
+        return '<span style="color: #67C23A;">' + s.禄 + '</span>  <span style="color: #EE82EE;">' + s.权 + '</span>  <span style="color: #409EFF;">' + s.科 + '</span>  <span style="color: #F56C6C;">' + s.忌 + '</span>';
+    }
+    var syEl = document.getElementById('code-sihua-year'), smEl = document.getElementById('code-sihua-month'), sdEl = document.getElementById('code-sihua-day');
+    if (syEl) syEl.innerHTML = '<span class="code">流年四化</span>: ' + fmtSihua(yearSihua);
+    if (smEl) smEl.innerHTML = '<span class="code">流月四化</span>: ' + fmtSihua(monthSihua);
+    if (sdEl) sdEl.innerHTML = '<span class="code">流日四化</span>: ' + fmtSihua(daySihua);
+
+    // --- 节气 ---
+    var todayTerm = lunarInfo.term || '';
+    var currentTerm = '', nextTerm = '', nextTermDate = '';
+    if (todayTerm) {
+        currentTerm = todayTerm;
+    } else {
+        var tempDateBack = new Date(year, month - 1, day);
+        while (true) {
+            tempDateBack.setDate(tempDateBack.getDate() - 1);
+            var tl = LunarCalendar.solarToLunar(tempDateBack.getFullYear(), tempDateBack.getMonth()+1, tempDateBack.getDate());
+            if (tl.term) { currentTerm = tl.term; break; }
+        }
+    }
+    var tempDate = new Date(year, month - 1, day);
+    while (true) {
+        tempDate.setDate(tempDate.getDate() + 1);
+        var tl = LunarCalendar.solarToLunar(tempDate.getFullYear(), tempDate.getMonth()+1, tempDate.getDate());
+        if (tl.term && tl.term !== currentTerm) { nextTerm = tl.term; nextTermDate = tempDate.getFullYear()+'-'+String(tempDate.getMonth()+1).padStart(2,'0')+'-'+String(tempDate.getDate()).padStart(2,'0'); break; }
+    }
+    var termEl = document.getElementById('code-term');
+    if (termEl) {
+        termEl.innerHTML = '<span class="code">节气</span>: <span class="number" style="color: ' + numberColor + '">' + currentTerm + ' ➜ ' + nextTerm + '（' + nextTermDate + '）</span>';
+    }
+
+    // --- 五运 ---
+    var wuYunMap = {
+        '甲':'土运|太过','乙':'金运|不及','丙':'水运|太过','丁':'木运|不及',
+        '戊':'火运|太过','己':'土运|不及','庚':'金运|太过','辛':'水运|不及',
+        '壬':'木运|太过','癸':'火运|不及'
+    };
+    var wuYunStr = wuYunMap[ganzhiYear.charAt(0)];
+    var wuyunEl = document.getElementById('code-wuyun');
+    if (wuyunEl) {
+        wuyunEl.innerHTML = '<span class="code">五运</span>: <span class="number" style="color: ' + numberColor + '">' + wuYunStr + '</span>';
+    }
+
+    // --- 六气 / 司天 / 在泉 ---
+    var liuQiZhuQi = [
+        {step:1, qi:'厥阴风木'},{step:2, qi:'少阴君火'},{step:3, qi:'少阳相火'},
+        {step:4, qi:'太阴湿土'},{step:5, qi:'阳明燥金'},{step:6, qi:'太阳寒水'}
+    ];
+    var liuQiKeQiMap = {
+        '子':['太阳寒水','厥阴风木','少阴君火','太阴湿土','少阳相火','阳明燥金'],
+        '午':['太阳寒水','厥阴风木','少阴君火','太阴湿土','少阳相火','阳明燥金'],
+        '丑':['厥阴风木','少阴君火','太阴湿土','少阳相火','阳明燥金','太阳寒水'],
+        '未':['厥阴风木','少阴君火','太阴湿土','少阳相火','阳明燥金','太阳寒水'],
+        '寅':['少阴君火','太阴湿土','少阳相火','阳明燥金','太阳寒水','厥阴风木'],
+        '申':['少阴君火','太阴湿土','少阳相火','阳明燥金','太阳寒水','厥阴风木'],
+        '卯':['太阴湿土','少阳相火','阳明燥金','太阳寒水','厥阴风木','少阴君火'],
+        '酉':['太阴湿土','少阳相火','阳明燥金','太阳寒水','厥阴风木','少阴君火'],
+        '辰':['少阳相火','阳明燥金','太阳寒水','厥阴风木','少阴君火','太阴湿土'],
+        '戌':['少阳相火','阳明燥金','太阳寒水','厥阴风木','少阴君火','太阴湿土'],
+        '巳':['阳明燥金','太阳寒水','厥阴风木','少阴君火','太阴湿土','少阳相火'],
+        '亥':['阳明燥金','太阳寒水','厥阴风木','少阴君火','太阴湿土','少阳相火']
+    };
+    var liuQiStepMap = [
+        {name:'初之气',start:'大寒',end:'惊蛰'},{name:'二之气',start:'春分',end:'立夏'},
+        {name:'三之气',start:'小满',end:'小暑'},{name:'四之气',start:'大暑',end:'白露'},
+        {name:'五之气',start:'秋分',end:'立冬'},{name:'终之气',start:'小雪',end:'小寒'}
+    ];
+    function getCurrentStep(jieQiName) {
+        var order = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪'];
+        var ci = order.indexOf(jieQiName);
+        for (var i=0; i<liuQiStepMap.length; i++) {
+            var s = liuQiStepMap[i];
+            var si = order.indexOf(s.start), ei = order.indexOf(s.end);
+            if (si <= ei) { if (ci >= si && ci < ei) return {step:i+1, name:s.name}; }
+            else { if (ci >= si || ci < ei) return {step:i+1, name:s.name}; }
+        }
+        return {step:6, name:'终之气'};
+    }
+    var liuQiToWuXing = {
+        '太阳寒水':'水','厥阴风木':'木','少阴君火':'火',
+        '太阴湿土':'土','少阳相火':'火','阳明燥金':'金'
+    };
+    var wuxingSheng = {'木':'火','火':'土','土':'金','金':'水','水':'木'};
+    var wuxingKe = {'木':'土','火':'金','土':'水','金':'木','水':'火'};
+    function judgeLiuQiRelation(zhu, ke) {
+        var zw = liuQiToWuXing[zhu], kw = liuQiToWuXing[ke];
+        if (zw === kw) return '相得';
+        if (wuxingSheng[zw] === kw || wuxingSheng[kw] === zw) return '相得';
+        if (wuxingKe[zw] === kw) return '逆';
+        if (wuxingKe[kw] === zw) return '顺';
+        if (ke === '少阴君火' && zhu === '少阳相火') return '顺';
+        if (ke === '少阳相火' && zhu === '少阴君火') return '逆';
+        return '无特别关系';
+    }
+
+    var csi = getCurrentStep(currentTerm);
+    var currentMainQi = liuQiZhuQi[csi.step-1].qi;
+    var currentKeQi = liuQiKeQiMap[yearDiZhi][csi.step-1];
+    var yearKeQiArr = liuQiKeQiMap[yearDiZhi];
+    var liuqiSitian = yearKeQiArr[2];
+    var liuqiZaiquan = yearKeQiArr[5];
+    var liuqiRelation = judgeLiuQiRelation(currentMainQi, currentKeQi);
+    var sitianRelation = judgeLiuQiRelation("少阳相火", liuqiSitian);
+    var zaiquanRelation = judgeLiuQiRelation("太阳寒水", liuqiZaiquan);
+
+    var liuqiEl = document.getElementById('code-liuqi');
+    if (liuqiEl) {
+        liuqiEl.innerHTML = '<span class="code">六气（主|客）</span>: <span class="number" style="color: ' + numberColor + '">' + currentMainQi + '|' + currentKeQi + ' ➜ ' + csi.name + liuqiRelation + '</span>';
+    }
+    var sitianEl = document.getElementById('code-sitian');
+    if (sitianEl) {
+        sitianEl.innerHTML = '<span class="code">司天（主|客）</span>: <span class="number" style="color: ' + numberColor + '">少阳相火|' + liuqiSitian + ' ➜ ' + sitianRelation + '</span>';
+    }
+    var zaiquanEl = document.getElementById('code-zaiquan');
+    if (zaiquanEl) {
+        zaiquanEl.innerHTML = '<span class="code">在泉（主|客）</span>: <span class="number" style="color: ' + numberColor + '">太阳寒水|' + liuqiZaiquan + ' ➜ ' + zaiquanRelation + '</span>';
+    }
+
+    // Return data needed by _updateHourNodes
+    return { year: year, month: month, day: day, hours: hours, numberColor: numberColor };
+}
+
+function updateTime() {
+    var now = new Date();
+    var hours = now.getHours();
+    var year = now.getFullYear();
+    var month = now.getMonth() + 1;
+    var day = now.getDate();
+    var dateKey = year + '-' + month + '-' + day;
+
+    var isDarkTheme = document.body.classList.contains('animated-background-dark');
+    var numberColor = isDarkTheme ? '#dcdcaa' : '#1e3a8a';
+
+    // === Progress: always update (even though called every 10s, progress changes continuously) ===
+    var startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+    var progress = ((now - startOfDay) / 86400000) * 100;
+    var progressEl = document.getElementById('code-progress');
+    if (progressEl) {
+        progressEl.innerHTML = '<span class="code">本日进度</span>: <span class="number" style="color: ' + numberColor + '">' + progress.toFixed(2) + '%</span>';
+    }
+
+    // === Day boundary: rebuild all day-dependent nodes ===
+    if (dateKey !== _timeState.lastDate) {
+        _timeState.lastDate = dateKey;
+        _timeState.lastHour = -1; // force hour update below
+        _buildDayNodes(year, month, day, hours, numberColor);
+    }
+
+    // === Hour boundary: update hour-dependent nodes (cascades from day boundary too) ===
+    if (hours !== _timeState.lastHour) {
+        _timeState.lastHour = hours;
+        _updateHourNodes(year, month, day, hours, numberColor);
+    }
+}
+
+var bgImagePath = '';
+var bgVideoPath = '';
+var bgVideoEl = null;
+var bgSlideFiles = [];
+var bgSlideIndex = 0;
+var bgSlideTimer = null;
+var bgSlideInterval = 30;
+var audioSpectrum = new Array(128).fill(0);
+var audioEnabled = false;
+var audioReactive = true;
+var audioSensitivity = 1.0;
+var audioBass = 1.0;
+var audioTreble = 1.0;
+var audioModTimerActive = false;  // 仅粒子+音频律动开启时才激活
+var particleColorMode = 'solid';
+var particleColorHex = '#6a5acd';
+var thunderFlashTimer = 0;
+var thunderFlashDuration = 0;
+
+// resize 监听器追踪 — 用于 setPaused 暂停/恢复时移除和重新绑定
+var _resizeHandlers = [];        // {fn, debounced} 对 fixPos / resizeLightning
+var _particlesResizeFn = null;  // particlesJS 内部注册的 resize 回调
+var _resizeActive = true;       // 标记 resize 监听器当前是否已绑定
+function _debounce(fn, delay) {
+    var timer = null;
+    return function() {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function() { fn(); }, delay);
+    };
+}
+
+var gradientColors = ['rgb(255,107,53)', 'rgb(106,13,173)', 'rgb(0,180,216)'];
+var bgSolidColor = 'rgb(26, 27, 46)';  // 纯色背景专用，默认对应 project.json bgcolor 默认值 (0.102 0.106 0.180)
+var gradientAngle = 135;
+var gradientType = 'linear';
+var gradientSpeed = 8;
+
+function lerpColor(c1, c2, t) {
+    var m1 = c1.match(/\d+/g).map(Number);
+    var m2 = c2.match(/\d+/g).map(Number);
+    return 'rgb(' + Math.round(m1[0] + (m2[0] - m1[0]) * t) + ',' +
+        Math.round(m1[1] + (m2[1] - m1[1]) * t) + ',' +
+        Math.round(m1[2] + (m2[2] - m1[2]) * t) + ')';
+}
+
+function buildSmoothStops(colors) {
+    var stops = [], n = colors.length, seg = 5;
+    for (var i = 0; i < n; i++) {
+        var c1 = colors[i], c2 = colors[(i + 1) % n];
+        for (var j = 0; j < seg; j++) stops.push(lerpColor(c1, c2, j / seg));
+    }
+    stops.push(colors[0]);
+    return stops;
+}
+
+// ══════════════════════════════════════════════
+// rAF 渐变引擎 — 官方 FPS Limiter 模式 + 帧驱动微增量
+// 每帧 adv = speed × multiplier  速度=(adv×60)周期/秒
+// 线性: ×0.0007   speed=8→~3.0s  speed=1→~24s  speed=30→~0.8s
+// 径向: ×0.004    speed=8→~3.3s  speed=1→~26s  speed=30→~0.9s
+// 锥形: ×0.20     speed=8→~3.8s  speed=1→~30s  speed=30→~1.0s
+// ══════════════════════════════════════════════
+var gradAnimId = null;
+var gradPhase = 0;
+var _gradStopped = true;
+var _stopsArr = null;
+var _prebuiltGradAngle = 0;
+
+function _rebuildGradStops() {
+    _stopsArr = buildSmoothStops(gradientColors);
+    _prebuiltGradAngle = gradientAngle;
+}
+
+function startLinearAnimation() {
+    stopGradAnimation();
+    _gradStopped = false;
+    _rebuildGradStops();
+    var stopsArr = _stopsArr;
+    function step() {
+        if (_gradStopped) return;
+        gradAnimId = requestAnimationFrame(step);
+        gradPhase = (gradPhase + gradientSpeed * 0.0007) % 1.0;
+        if (_prebuiltGradAngle !== gradientAngle) { _rebuildGradStops(); stopsArr = _stopsArr; }
+        var i = Math.floor(gradPhase * stopsArr.length);
+        var shifted = stopsArr.slice(i).concat(stopsArr.slice(0, i)).join(', ');
+        document.body.style.backgroundImage = 'linear-gradient(' + gradientAngle + 'deg, ' + shifted + ')';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundSize = 'cover';
+    }
+    gradAnimId = requestAnimationFrame(step);
+}
+
+function startRadialAnimation() {
+    stopGradAnimation();
+    _gradStopped = false;
+    _rebuildGradStops();
+    function step() {
+        if (_gradStopped) return;
+        gradAnimId = requestAnimationFrame(step);
+        gradPhase = (gradPhase + gradientSpeed * 0.004) % (2 * Math.PI);
+        var cx = 50 + 25 * Math.sin(gradPhase);
+        var cy = 50 + 25 * Math.cos(gradPhase);
+        document.body.style.backgroundImage = 'radial-gradient(circle at ' + cx.toFixed(1) + '% ' + cy.toFixed(1) + '%, ' + _stopsArr.join(', ') + ')';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundSize = 'cover';
+    }
+    gradAnimId = requestAnimationFrame(step);
+}
+
+function startConicAnimation() {
+    stopGradAnimation();
+    _gradStopped = false;
+    _rebuildGradStops();
+    function step() {
+        if (_gradStopped) return;
+        gradAnimId = requestAnimationFrame(step);
+        gradPhase = (gradPhase + gradientSpeed * 0.20) % 360;
+        document.body.style.backgroundImage = 'conic-gradient(from ' + gradPhase.toFixed(1) + 'deg, ' + _stopsArr.join(', ') + ')';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundSize = 'cover';
+    }
+    gradAnimId = requestAnimationFrame(step);
+}
+
+function stopGradAnimation() {
+    _gradStopped = true;
+    if (gradAnimId) { cancelAnimationFrame(gradAnimId); gradAnimId = null; }
+    gradPhase = 0;
+}
+
+// 液态玻璃参数
+var glassSettings = { opacity: 3, blur: 1, saturate: 1, border: 1 };
+function applyGlassSettings() {
+    var s = glassSettings;
+    var root = document.documentElement.style;
+    root.setProperty('--glass-alpha', (s.opacity * 0.08).toFixed(3));
+    root.setProperty('--glass-blur', (s.blur * 4) + 'px');
+    root.setProperty('--glass-saturate', (1 + s.saturate * 0.15).toFixed(2));
+    root.setProperty('--glass-border', (s.border * 0.03).toFixed(3));
+}
+
+function applyCustomBackground() {
+    const type = currentBgType;
+    const body = document.body;
+    const particles = document.getElementById('particles-js');
+    const lc = document.getElementById('lightning-canvas');
+    const root = document.documentElement.style;
+    body.style.background = '';
+    body.style.backgroundImage = '';
+    body.style.backgroundSize = '';
+    stopGradAnimation();
+    // 非视频背景时释放视频解码资源（防止从视频切换到渐变/纯色/粒子后内存泄漏）
+    if (type !== 'video' && bgVideoEl) {
+        bgVideoEl.style.display = 'none';
+        bgVideoEl.removeAttribute('src');
+        try { bgVideoEl.load(); } catch(e) {}
+    }
+    // 纯色/图片/视频背景不需要 backdrop-filter（背后无动态内容）
+    // 直接移除滤镜而非设零值——CEF 合成器可能不优化 blur(0px)，仍会创建 backdrop 图层
+    if (type === 'color' || type === 'image' || type === 'video') {
+        body.classList.add('no-glass-blur');
+    } else {
+        body.classList.remove('no-glass-blur');
+    }
+    // 闪电canvas仅雷法粒子需要；其他模式隐藏以释放合成器资源（全屏大图层）
+    if (lc) lc.style.display = (type === 'particles' && particleConfig.style === 'thunder') ? '' : 'none';
+    if (particles) particles.style.display = (type === 'particles') ? 'block' : 'none';
+    // 非粒子模式：销毁粒子实例以停止内部 rAF 渲染循环（hidden 不阻止渲染）
+    if (type !== 'particles') {
+        if (window.pJSDom && window.pJSDom.length > 0) {
+            window.pJSDom.forEach(function(old) {
+                try { if (old.pJS && old.pJS.fn) old.pJS.fn.canvas.clear(); } catch(e) {}
+            });
+            window.pJSDom = [];
+        }
+        if (particles) { while (particles.firstChild) { particles.removeChild(particles.firstChild); } }
+        audioModTimerActive = false; stopAudioMod();
+    } else if (audioReactive) { audioModTimerActive = true; startAudioMod(); }
+    if (type === 'gradient') {
+        if (gradientType === 'linear') {
+            startLinearAnimation();
+        } else if (gradientType === 'radial') {
+            startRadialAnimation();
+        } else if (gradientType === 'conic') {
+            startConicAnimation();
+        }
+    } else if (type === 'color') {
+        body.style.background = bgSolidColor;
+    } else if (type === 'image') {
+        if (bgImagePath) {
+            body.style.backgroundImage = 'url("file:///' + bgImagePath.replace(/\\/g, '/') + '")';
+            body.style.backgroundSize = 'cover';
+            body.style.backgroundPosition = 'center';
+        }
+    } else if (type === 'video') {
+        if (bgVideoPath) {
+            const path = 'file:///' + bgVideoPath.replace(/\\/g, '/');
+            if (!bgVideoEl) {
+                bgVideoEl = document.createElement('video');
+                bgVideoEl.autoplay = true;
+                bgVideoEl.loop = true;
+                bgVideoEl.muted = true;
+                bgVideoEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
+                document.body.insertBefore(bgVideoEl, document.body.firstChild);
+            }
+            bgVideoEl.src = path;
+            bgVideoEl.style.display = 'block';
+            body.style.backgroundImage = '';
+        }
+    } else if (type === 'slideshow') {
+        body.style.backgroundImage = '';
+        // slideshow display handled by onDirectoryFilesChanged
+    }
+}
+
+function startSlideshow() {
+    stopSlideshow();
+    if (bgSlideFiles.length === 0 || currentBgType !== 'slideshow') return;
+    bgSlideTimer = setInterval(function() {
+        if (bgSlideFiles.length === 0) return;
+        bgSlideIndex = (bgSlideIndex + 1) % bgSlideFiles.length;
+        bgImagePath = bgSlideFiles[bgSlideIndex];
+        applyCustomBackground();
+    }, bgSlideInterval * 1000);
+}
+
+function stopSlideshow() {
+    if (bgSlideTimer) { clearInterval(bgSlideTimer); bgSlideTimer = null; }
+}
+
+function onDirectoryFilesChanged(filePaths) {
+    bgSlideFiles = filePaths || [];
+    bgSlideIndex = 0;
+    if (bgSlideFiles.length > 0 && currentBgType === 'slideshow') {
+        bgImagePath = bgSlideFiles[0];
+        applyCustomBackground();
+    }
+    if (bgSlideFiles.length > 1 && currentBgType === 'slideshow') {
+        startSlideshow();
+    } else {
+        stopSlideshow();
+    }
+}
+
+// 粒子系统全局变量
+var particleConfig = {
+    style: 'geometric',
+    count: 60,
+    speed: 2,
+    size: 4,
+    opacity: 0.5,
+    lineEnable: true,
+    lineDistance: 120,
+    lineOpacity: 0.4,
+    direction: 'none',
+    color: '#6a5acd'
+};
+var particlesInstance = null;  // 保留供未来扩展使用
+
+// 直接修改已存在的粒子实例参数（与 updateParticleConfig 风格覆盖完全对齐，立即生效）
+function applyParticleParamsToInstance() {
+    try {
+        var pdom = window.pJSDom;
+        if (!pdom || pdom.length === 0) return;
+        var p = pdom[pdom.length - 1].pJS;
+        var style = particleConfig.style;
+        // 通用可调参数
+        p.particles.number.value = particleConfig.count;
+        p.particles.size.value = particleConfig.size;
+        p.particles.opacity.value = particleConfig.opacity;
+        p.particles.line_linked.distance = particleConfig.lineDistance;
+        p.particles.line_linked.opacity = particleConfig.lineOpacity;
+        p.particles.line_linked.enable = particleConfig.lineEnable;
+        p.particles.move.speed = particleConfig.speed;
+        p.particles.move.direction = particleConfig.direction;
+        // 风格覆盖
+        if (style === 'starry') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#6a5acd';
+            p.particles.line_linked.color = particleColorMode === 'solid' ? particleColorHex : '#6a5acd';
+            p.particles.shape.type = 'circle';
+            p.particles.line_linked.enable = true;
+        } else if (style === 'snow') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
+            p.particles.line_linked.enable = false;
+        } else if (style === 'geometric') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#20b2aa';
+            p.particles.line_linked.color = particleColorMode === 'solid' ? particleColorHex : '#20b2aa';
+            p.particles.shape.type = 'triangle';
+            p.particles.line_linked.enable = true;
+        } else if (style === 'bubbles') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : ['#FFD700', '#FF6347', '#7B68EE', '#00CED1', '#FF69B4'];
+            p.particles.line_linked.enable = false;
+        } else if (style === 'lightdots') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
+            p.particles.opacity = {value: 0.8, random: true, anim: {enable: true, speed: 1, opacity_min: 0.1, sync: false}};
+            p.particles.size = {value: 2, random: true, anim: {enable: true, speed: 2, size_min: 0.5, sync: false}};
+            p.particles.line_linked.enable = false;
+        } else if (style === 'firefly') {
+            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#FFD700';
+            p.particles.opacity = {value: 0.7, random: true, anim: {enable: true, speed: 2, opacity_min: 0.2, sync: false}};
+            p.particles.size = {value: 4, random: true, anim: {enable: true, speed: 3, size_min: 1, sync: false}};
+            p.particles.line_linked.enable = false;
+            p.particles.move.speed = 0.3;
+        } else if (style === 'thunder') {
+            p.particles.shape.type = 'circle';
+            p.particles.size.anim = { enable: false };
+            p.particles.color.value = '#e0eeff';
+            p.particles.move.speed = particleConfig.speed * 2.5;
+        }
+        p.fn.particlesRefresh();
+    } catch(e) { console.warn('[粒子] 参数更新失败:', e); }
+}
+
+function updateParticleConfig() {
+    var cfg = {
+        particles: {
+            number: {value: particleConfig.count, density: {enable: false}},
+            color: {value: particleConfig.color},
+            shape: {type: "circle"},
+            opacity: {value: particleConfig.opacity, random: true},
+            size: {value: particleConfig.size, random: true},
+            line_linked: {
+                enable: particleConfig.lineEnable,
+                distance: particleConfig.lineDistance,
+                color: particleConfig.color,
+                opacity: particleConfig.lineOpacity,
+                width: 1
+            },
+            move: {
+                enable: true,
+                speed: particleConfig.speed,
+                direction: particleConfig.direction,
+                random: true,
+                straight: false,
+                out_mode: "out",
+                bounce: false
+            }
+        },
+        interactivity: {
+            detect_on: "canvas",
+            events: {onhover: {enable: true, mode: "grab"}, onclick: {enable: true, mode: "push"}, resize: true}
+        },
+        retina_detect: false
+    };
+    // 风格覆盖
+    if (particleConfig.style === 'starry') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#6a5acd';
+        cfg.particles.shape.type = 'circle';
+        cfg.particles.line_linked.enable = true;
+    } else if (particleConfig.style === 'snow') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
+        cfg.particles.line_linked.enable = false;
+    } else if (particleConfig.style === 'geometric') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#20b2aa';
+        cfg.particles.shape.type = 'triangle';
+        cfg.particles.line_linked.enable = true;
+    } else if (particleConfig.style === 'bubbles') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : ['#FFD700', '#FF6347', '#7B68EE', '#00CED1', '#FF69B4'];
+        cfg.particles.line_linked.enable = false;
+    } else if (particleConfig.style === 'lightdots') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
+        cfg.particles.opacity = {value: 0.8, random: true, anim: {enable: true, speed: 1, opacity_min: 0.1, sync: false}};
+        cfg.particles.size = {value: 2, random: true, anim: {enable: true, speed: 2, size_min: 0.5, sync: false}};
+        cfg.particles.line_linked.enable = false;
+    } else if (particleConfig.style === 'firefly') {
+        cfg.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#FFD700';
+        cfg.particles.opacity = {value: 0.7, random: true, anim: {enable: true, speed: 2, opacity_min: 0.2, sync: false}};
+        cfg.particles.size = {value: 4, random: true, anim: {enable: true, speed: 3, size_min: 1, sync: false}};
+        cfg.particles.line_linked.enable = false;
+        cfg.particles.move.speed = 0.3;
+    } else if (particleConfig.style === 'thunder') {
+        cfg.particles.shape.type = 'circle';
+        cfg.particles.size.anim = { enable: false };
+        cfg.particles.color.value = '#e0eeff';
+        cfg.particles.move.speed = particleConfig.speed * 2.5;
+    }
+    return cfg;
+}
+
+var reinitTimer = null;
+function reinitParticles() {
+    clearTimeout(reinitTimer);
+    reinitTimer = setTimeout(_doReinitParticles, 150);
+}
+
+function _doReinitParticles() {
+    var el = document.getElementById('particles-js');
+    if (!el) return;
+    // 移除旧的 particlesJS resize 监听器（防泄漏）
+    if (_particlesResizeFn) {
+        window.removeEventListener('resize', _particlesResizeFn);
+        _particlesResizeFn = null;
+    }
+    // 销毁旧实例（minified版particlesJS把实例推到pJSDom数组，需逐个清理）
+    if (window.pJSDom && window.pJSDom.length > 0) {
+        window.pJSDom.forEach(function(old) {
+            try { if (old.pJS && old.pJS.fn) old.pJS.fn.canvas.clear(); } catch(e) {}
+        });
+        window.pJSDom = [];
+    }
+    // 清除旧canvas
+    while (el.firstChild) {
+        el.removeChild(el.firstChild);
+    }
+    var cfg = updateParticleConfig();
+    try {
+        if (window.particlesJS) {
+            // monkey-patch addEventListener 捕获 particlesJS 内部注册的 resize 回调
+            var _origAddEvt = window.addEventListener;
+            var _capturedResize = null;
+            window.addEventListener = function(type, listener, options) {
+                if (type === 'resize') { _capturedResize = listener; }
+                return _origAddEvt.call(window, type, listener, options);
+            };
+            particlesJS('particles-js', cfg);
+            window.addEventListener = _origAddEvt;
+            _particlesResizeFn = _capturedResize;
+            // 从pJSDom获取实例（minified版particlesJS不返回值）
+            var p = window.pJSDom && window.pJSDom[0];
+            if (p && p.pJS) {
+                particlesInstance = p;
+                var pJSRef = p.pJS;
+                var origDraw = pJSRef.fn.particle.prototype.draw;
+                pJSRef.fn.particle.prototype.draw = function() {
+                    if (particleConfig.style !== 'thunder') { return origDraw.call(this); }
+                    var ctx = pJSRef.canvas.ctx;
+                    var p = this;
+                    if (p.radius <= 0) return;
+                    var op = typeof p.opacity === 'number' ? p.opacity :
+                            (p.opacity && p.opacity.value != null ? p.opacity.value : 0.7);
+                    if (op <= 0) return;
+                    var r = 5;
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.fillStyle = p.color.rgb ?
+                        'rgba(' + Math.floor(p.color.rgb.r) + ',' + Math.floor(p.color.rgb.g) + ',' + Math.floor(p.color.rgb.b) + ',' + op + ')' :
+                        'rgba(224,238,255,' + op + ')';
+                    ctx.shadowBlur = r * 1.1;
+                    ctx.shadowColor = ctx.fillStyle;
+                    ctx.beginPath();
+                    ctx.moveTo(r * 0.05, -r * 1.3);
+                    ctx.lineTo(-r * 0.65, -r * 0.05);
+                    ctx.lineTo(-r * 0.08, r * 0.02);
+                    ctx.lineTo(-r * 0.45, r * 1.0);
+                    ctx.lineTo(r * 0.15, r * 0.1);
+                    ctx.lineTo(-r * 0.08, r * 0.18);
+                    ctx.lineTo(r * 0.75, -r * 0.7);
+                    ctx.lineTo(r * 0.28, -r * 0.42);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                };
+            }
+        }
+    } catch(e) {
+        console.warn('[粒子] 重建失败:', e);
+        particlesInstance = null;
+    }
+}
+
+// 初始化默认粒子（仅粒子背景才初始化；纯色/渐变等模式跳过，避免无谓创建+内部rAF泄漏）
+var _particlesInitDone = false;
+function ensureParticlesInit() {
+    if (_particlesInitDone) return;
+    _particlesInitDone = true;
+    if (currentBgType !== 'particles') return;  // 非粒子模式无需创建，避免CPU浪费
+    _doReinitParticles();
+}
+setTimeout(ensureParticlesInit, 150);
+
+var currentBgType = 'particles';
+var _clockHourHand = null, _clockMinuteHand = null, _clockSecondHand = null, _clockDigital = null;
+
+function updateClockDisplay() {
+    if (!_clockHourHand) return;  // 时钟尚未构建
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
+    _clockDigital.textContent = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    const hourDeg = (hours % 12) * 30 + (minutes * 0.5);
+    const minuteDeg = minutes * 6 + (seconds * 0.1);
+    const secondDeg = seconds * 6;
+    _clockHourHand.style.transform = 'rotate(' + hourDeg + 'deg)';
+    _clockMinuteHand.style.transform = 'rotate(' + minuteDeg + 'deg)';
+    _clockSecondHand.style.transform = 'rotate(' + secondDeg + 'deg)';
+}
+
+(function buildClock() {
+    var clock = document.createElement('div');
+    clock.className = 'clock-wrapper liquid-glass';
+    // 时钟在 viewport 层，尺寸自适应屏幕（不受 layout-root 的 scale 影响）
+    clock.style.setProperty('--clock-size', 'clamp(120px, 11vh, 200px)');
+    clock.style.setProperty('font-size', 'clamp(16px, 1.8vh, 26px)');
+    clock.style.zIndex = '200';
+    clock.innerHTML = [
+        '<div class="analog-clock">',
+        '<svg class="clock-face" viewBox="0 0 200 200">',
+        '<circle class="tick-minor" cx="100" cy="100" r="92" fill="none" stroke-width="5" stroke-dasharray="0.5 9.13" transform="rotate(-90,100,100)"/>',
+        '<circle class="tick-major" cx="100" cy="100" r="90" fill="none" stroke-width="7" stroke-dasharray="2 45.12" transform="rotate(-90,100,100)"/>',
+        '<text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300">12</text>',
+        '<g transform="rotate(30,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-30,100,12)">1</text></g>',
+        '<g transform="rotate(60,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-60,100,12)">2</text></g>',
+        '<g transform="rotate(90,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-90,100,12)">3</text></g>',
+        '<g transform="rotate(120,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-120,100,12)">4</text></g>',
+        '<g transform="rotate(150,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-150,100,12)">5</text></g>',
+        '<g transform="rotate(180,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-180,100,12)">6</text></g>',
+        '<g transform="rotate(210,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-210,100,12)">7</text></g>',
+        '<g transform="rotate(240,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-240,100,12)">8</text></g>',
+        '<g transform="rotate(270,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-270,100,12)">9</text></g>',
+        '<g transform="rotate(300,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-300,100,12)">10</text></g>',
+        '<g transform="rotate(330,100,100)"><text class="num" x="100" y="12" text-anchor="middle" dominant-baseline="central" font-size="14" font-family="\'SF Pro Display\',\'PingFang SC\',\'Microsoft YaHei\',sans-serif" font-weight="300" transform="rotate(-330,100,12)">11</text></g>',
+        '</svg>',
+        '<div class="hand hour-hand"></div>',
+        '<div class="hand minute-hand"></div>',
+        '<div class="hand second-hand"></div>',
+        '<div class="center-dot"></div>',
+        '</div>',
+        '<div class="digital-clock" id="digital-clock"></div>'
+    ].join('\n');
+    // 时钟始终在屏幕右上角（viewport 层，不受 layout-root scale 影响）
+    document.documentElement.insertBefore(clock, document.body);
+    // 缓存时钟指针引用，避免 updateClockDisplay 每秒 querySelector
+    _clockHourHand = clock.querySelector('.hour-hand');
+    _clockMinuteHand = clock.querySelector('.minute-hand');
+    _clockSecondHand = clock.querySelector('.second-hand');
+    _clockDigital = clock.querySelector('#digital-clock');
+    function fixPos() {
+        // 时钟位置由CSS .clock-wrapper 的 right: clamp(...) 全权处理，JS不再干预
+    }
+    var _fixPosDebounced = _debounce(fixPos, 150);
+    requestAnimationFrame(function() { requestAnimationFrame(fixPos); });
+    window.addEventListener('resize', _fixPosDebounced);
+    _resizeHandlers.push({fn: fixPos, debounced: _fixPosDebounced});
+})();
+
+// ══════════════════════════════════════════════
+// 核心缩放 — 3840×1600画布等比适配任意屏幕
+// ══════════════════════════════════════════════
+(function() {
+    var root = document.getElementById('layout-root');
+    if (!root) return;
+    var BASELINE_W = 3840, BASELINE_H = 1600;
+    var MIN_SCALE = 0.55; // 下限保底字体≥13.9px
+
+    function applyScale() {
+        var sc = Math.min(window.innerWidth / BASELINE_W, window.innerHeight / BASELINE_H);
+        sc = Math.max(MIN_SCALE, sc);
+        var ox = (window.innerWidth  - BASELINE_W * sc) / 2;
+        var oy = (window.innerHeight - BASELINE_H * sc) / 2;
+        root.style.transform = 'scale(' + sc + ')';
+        root.style.left = ox + 'px';
+        root.style.top  = oy + 'px';
+
+        // 动态定位时钟：默认right=50px；若内容右边界侵入时钟区域则推至内容右侧
+        var clock = document.querySelector('.clock-wrapper');
+        if (clock) {
+            // 取 content-row 和 huangli-panel 中更靠右者
+            var rows = document.querySelectorAll('.content-row, .huangli-panel');
+            var maxPanelRight = 0;
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i].getBoundingClientRect();
+                if (r.right > maxPanelRight) maxPanelRight = r.right;
+            }
+            if (maxPanelRight > 0) {
+                var cw = clock.offsetWidth;
+                var maxRight = window.innerWidth - maxPanelRight - 16 - cw;
+                clock.style.right = Math.max(4, Math.min(50, maxRight)) + 'px';
+            }
+        }
+    }
+
+    applyScale();
+    // 初始加载后再次校准（内容渲染完毕后 getBoundingClientRect 才准确）
+    setTimeout(applyScale, 500);
+    var _scaleDebounced = _debounce(applyScale, 150);
+    window.addEventListener('resize', _scaleDebounced);
+    _resizeHandlers.push({fn: applyScale, debounced: _scaleDebounced});
+})();
+
+// 初始化闪电Canvas尺寸
+(function() {
+    function resizeLightning() {
+        var lc = document.getElementById('lightning-canvas');
+        if (!lc) return;
+        lc.width = window.innerWidth;
+        lc.height = window.innerHeight;
+    }
+    var _resizeLightningDebounced = _debounce(resizeLightning, 150);
+    resizeLightning();
+    window.addEventListener('resize', _resizeLightningDebounced);
+    _resizeHandlers.push({fn: resizeLightning, debounced: _resizeLightningDebounced});
+})();
+
+var _clockInterval = 1000;
+var updateTimer = setInterval(updateClockDisplay, _clockInterval);
+var fullUpdateTimer = setInterval(function() { updateTime(); updateHuangLi(); updateScorePanel(); }, 10000);
+updateTime();
+applyGlassSettings();
+
+// ══════════════════════════════════════════════
+// 右侧面板 — 万年历 + 运势评分
+// ══════════════════════════════════════════════
+window.userRiGan = '甲';
+
+var tianganList = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+
+// 十天干十神对照表 [userRiGanIdx][flowDayGanIdx]
+var shishenTable = (function() {
+    var elemIdx = [0,0,1,1,2,2,3,3,4,4];
+    var isYang = [1,0,1,0,1,0,1,0,1,0];
+    function samePolarity(a,b) { return isYang[a] === isYang[b]; }
+    function relation(myIdx, otherIdx) {
+        var me = elemIdx[myIdx], ot = elemIdx[otherIdx];
+        if (me === ot) return samePolarity(myIdx, otherIdx) ? '比肩' : '劫财';
+        if ((me+1)%5 === ot) return samePolarity(myIdx, otherIdx) ? '食神' : '伤官';
+        if ((ot+1)%5 === me) return samePolarity(myIdx, otherIdx) ? '偏印' : '正印';
+        var ke = [0,2,4,1,3];
+        var iAmK = false, otherK = false;
+        for (var k=0;k<5;k++) {
+            if (ke[k]===me && ke[(k+1)%5]===ot) iAmK = true;
+            if (ke[k]===ot && ke[(k+1)%5]===me) otherK = true;
+        }
+        if (iAmK) return samePolarity(myIdx, otherIdx) ? '偏财' : '正财';
+        if (otherK) return samePolarity(myIdx, otherIdx) ? '七杀' : '正官';
+        return '—';
+    }
+    var tbl = [];
+    for (var i=0;i<10;i++) { tbl[i]=[]; for (var j=0;j<10;j++) tbl[i][j]=relation(i,j); }
+    return tbl;
+})();
+
+// 地支藏干本气表（参照八字项目 bazi_engine.py BRANCH_CANGGAN 本气）
+var branchCanggan = {
+    '子':'癸','丑':'己','寅':'甲','卯':'乙','辰':'戊',
+    '巳':'丙','午':'丁','未':'己','申':'庚','酉':'辛','戌':'戊','亥':'壬'
+};
+
+function getZhiShiShen(userGanIdx, flowZhi) {
+    var cg = branchCanggan[flowZhi];
+    if (!cg) return '—';
+    var flowIdx = tianganList.indexOf(cg);
+    if (flowIdx < 0) return '—';
+    return shishenTable[userGanIdx][flowIdx];
+}
+
+function ganColor(g) { return tianganWuxingColor[g] || '#ccc'; }
+function zhiColor(z) { return dizhiWuxingColor[z] || '#ccc'; }
+
+var _calState = null;
+
+function renderCalendar() {
+    var section = document.getElementById('calendar-section');
+    if (!section) return;
+    var now = new Date();
+    var year = now.getFullYear(), month = now.getMonth() + 1, today = now.getDate();
+    var firstDay = new Date(year, month-1, 1).getDay();
+    var daysInMonth = new Date(year, month, 0).getDate();
+    var userTiangan = window.userRiGan;
+
+    // 同月同日同十神日主 → 高频调用直接跳过
+    if (_calState && _calState.year === year && _calState.month === month &&
+        _calState.day === today && _calState.userRiGan === userTiangan) {
+        return;
+    }
+
+    var userIdx = tianganList.indexOf(userTiangan);
+    if (userIdx < 0) userIdx = 0;
+
+    // 全量重建条件：首次 / 跨月 / 十神日主切换
+    if (!_calState || _calState.year !== year || _calState.month !== month ||
+        _calState.userRiGan !== userTiangan) {
+        var yearLunar = LunarCalendar.solarToLunar(year, 6, 1);
+        var yearGanZhi = yearLunar.GanZhiYear || '';
+
+        var html = '<div class="calendar-title">' + year + yearGanZhi + '年' + month + '月</div>';
+        html += '<div class="calendar-weekdays">';
+        var wds = ['日','一','二','三','四','五','六'];
+        for (var w=0;w<7;w++) html += '<span>' + wds[w] + '</span>';
+        html += '</div><div class="calendar-grid">';
+
+        var prevMonth = month === 1 ? 12 : month - 1;
+        var prevYear = month === 1 ? year - 1 : year;
+        var daysInPrevMonth = new Date(prevYear, prevMonth, 0).getDate();
+        for (var i=firstDay-1; i>=0; i--) {
+            var pd = daysInPrevMonth - i;
+            html += buildFillerCell(prevYear, prevMonth, pd, pd);
+        }
+
+        for (var d=1;d<=daysInMonth;d++) {
+            try {
+                var lunar = LunarCalendar.solarToLunar(year, month, d);
+                var ganzhiDay = lunar.GanZhiDay || '';
+                var dayGan = ganzhiDay.charAt(0), dayZhi = ganzhiDay.charAt(1);
+                var ssGan = (dayGan && userIdx >= 0) ? shishenTable[userIdx][tianganList.indexOf(dayGan)] : '—';
+                var ssZhi = (dayZhi && userIdx >= 0) ? getZhiShiShen(userIdx, dayZhi) : '—';
+                var isToday = (d === today);
+                html += '<div class="calendar-cell' + (isToday ? ' today' : '') + '">';
+                html += '<span class="day-num">' + d + '</span>';
+                html += '<span class="day-ganzhi"><span style="color:' + ganColor(dayGan) + '">' + (dayGan||'?') + '</span><span style="color:' + zhiColor(dayZhi) + '">' + (dayZhi||'?') + '</span></span>';
+                html += '<span class="day-shishen">' + (ssGan||'—') + ' ' + (ssZhi||'—') + '</span>';
+                html += '</div>';
+            } catch(e) {
+                html += '<div class="calendar-cell"><span class="day-num">' + d + '</span><span class="day-ganzhi">—</span></div>';
+            }
+        }
+
+        var totalUsed = firstDay + daysInMonth;
+        var totalCells = Math.ceil(totalUsed / 7) * 7;
+        var nextFill = totalCells - totalUsed;
+        var nextMonth = month === 12 ? 1 : month + 1;
+        var nextYear = month === 12 ? year + 1 : year;
+        for (var nd=1; nd<=nextFill; nd++) {
+            html += buildFillerCell(nextYear, nextMonth, nd, nd);
+        }
+
+        html += '</div>';
+        section.innerHTML = html;
+        _calState = { year: year, month: month, day: today, userRiGan: userTiangan };
+        return;
+    }
+
+    // 增量更新：同月仅日期切换 — 迁移 today 高亮 + 用 textContent/局部 innerHTML 刷新干支与十神
+    var grid = section.querySelector('.calendar-grid');
+    if (!grid) { _calState = null; renderCalendar(); return; }
+
+    var oldIdx = firstDay + _calState.day - 1;
+    var newIdx = firstDay + today - 1;
+
+    // 旧格：移除 today + 更新十神文字（日柱干支已变化）
+    if (oldIdx >= 0 && oldIdx < grid.children.length) {
+        var oCell = grid.children[oldIdx];
+        oCell.classList.remove('today');
+        try {
+            var oLunar = LunarCalendar.solarToLunar(year, month, _calState.day);
+            var oGZD = oLunar.GanZhiDay || '';
+            var oDG = oGZD.charAt(0), oDZ = oGZD.charAt(1);
+            var oSSG = (oDG && userIdx >= 0) ? shishenTable[userIdx][tianganList.indexOf(oDG)] : '—';
+            var oSSZ = (oDZ && userIdx >= 0) ? getZhiShiShen(userIdx, oDZ) : '—';
+            var oSS = oCell.querySelector('.day-shishen');
+            if (oSS) oSS.textContent = (oSSG||'—') + ' ' + (oSSZ||'—');
+        } catch(e) {}
+    }
+
+    // 新格：添加 today + 全量刷新干支颜色与十神
+    if (newIdx >= 0 && newIdx < grid.children.length) {
+        var nCell = grid.children[newIdx];
+        nCell.classList.add('today');
+        try {
+            var nLunar = LunarCalendar.solarToLunar(year, month, today);
+            var nGZD = nLunar.GanZhiDay || '';
+            var nDG = nGZD.charAt(0), nDZ = nGZD.charAt(1);
+            var nSSG = (nDG && userIdx >= 0) ? shishenTable[userIdx][tianganList.indexOf(nDG)] : '—';
+            var nSSZ = (nDZ && userIdx >= 0) ? getZhiShiShen(userIdx, nDZ) : '—';
+            var nGZ = nCell.querySelector('.day-ganzhi');
+            if (nGZ) nGZ.innerHTML = '<span style="color:' + ganColor(nDG) + '">' + (nDG||'?') + '</span><span style="color:' + zhiColor(nDZ) + '">' + (nDZ||'?') + '</span>';
+            var nSS = nCell.querySelector('.day-shishen');
+            if (nSS) nSS.textContent = (nSSG||'—') + ' ' + (nSSZ||'—');
+        } catch(e) {}
+    }
+
+    _calState.day = today;
+}
+
+function buildFillerCell(fy, fm, fd, dayNum) {
+    var html = '<div class="calendar-cell filler">';
+    html += '<span class="day-num">' + dayNum + '</span>';
+    try {
+        var lunar = LunarCalendar.solarToLunar(fy, fm, fd);
+        var gzd = lunar.GanZhiDay || '';
+        var dg = gzd.charAt(0), dz = gzd.charAt(1);
+        html += '<span class="day-ganzhi"><span style="color:' + ganColor(dg) + '">' + (dg||'?') + '</span><span style="color:' + zhiColor(dz) + '">' + (dz||'?') + '</span></span>';
+        var uIdx = tianganList.indexOf(window.userRiGan);
+        if (uIdx < 0) uIdx = 0;
+        var sg = (dg && uIdx >= 0) ? shishenTable[uIdx][tianganList.indexOf(dg)] : '—';
+        var sz = (dz && uIdx >= 0) ? getZhiShiShen(uIdx, dz) : '—';
+        html += '<span class="day-shishen">' + (sg||'—') + ' ' + (sz||'—') + '</span>';
+    } catch(e) {
+        html += '<span class="day-ganzhi">—</span>';
+    }
+    html += '</div>';
+    return html;
+}
+
+// 完整三藏干表
+var cangGanFull = {
+    '子':['癸'],'丑':['己','癸','辛'],'寅':['甲','丙','戊'],
+    '卯':['乙'],'辰':['戊','乙','癸'],'巳':['丙','庚','戊'],
+    '午':['丁','己'],'未':['己','丁','乙'],'申':['庚','壬','戊'],
+    '酉':['辛'],'戌':['戊','辛','丁'],'亥':['壬','甲']
+};
+
+function buildShishenColumn(title, ganzhi, userIdx) {
+    var gan = ganzhi.charAt(0);
+    var zhi = ganzhi.charAt(1);
+    if (!gan || !zhi) return '<div class="ss-col"><div class="ss-title">' + title + '</div><div class="ss-row" style="opacity:0.5;">—</div></div>';
+
+    var ganSS = shishenTable[userIdx][tianganList.indexOf(gan)] || '—';
+    var zhiSS = getZhiShiShen(userIdx, zhi) || '—';
+    var cgList = cangGanFull[zhi] || [branchCanggan[zhi]];
+
+    var html = '<div class="ss-col">';
+    html += '<div class="ss-title">' + title + '</div>';
+    html += '<div class="ss-row"><span class="ss-label">天干</span><span style="color:' + ganColor(gan) + '">' + gan + '</span>：<span class="ss-result">' + ganSS + '</span></div>';
+    html += '<div class="ss-row"><span class="ss-label">地支</span><span style="color:' + zhiColor(zhi) + '">' + zhi + '</span>：<span class="ss-result">' + zhiSS + '</span></div>';
+    html += '<div class="ss-row"><span class="ss-label">藏干</span></div>';
+    for (var c = 0; c < cgList.length; c++) {
+        var cg = cgList[c];
+        var cgIdx = tianganList.indexOf(cg);
+        var cgSS = cgIdx >= 0 ? shishenTable[userIdx][cgIdx] : '—';
+        html += '<div class="ss-row" style="padding-left:20px;"><span style="color:' + ganColor(cg) + '">' + cg + '</span>：<span class="ss-result">' + cgSS + '</span></div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+function renderDailyShishen() {
+    var section = document.getElementById('shishen-section');
+    if (!section) return;
+
+    var now = new Date();
+    var lunar = LunarCalendar.solarToLunar(now.getFullYear(), now.getMonth()+1, now.getDate());
+    var ganzhiDay = lunar.GanZhiDay || '';
+    var ganzhiMonth = lunar.GanZhiMonth || '';
+
+    var userIdx = tianganList.indexOf(window.userRiGan);
+    if (userIdx < 0) userIdx = 0;
+
+    var html = buildShishenColumn('本月十神', ganzhiMonth, userIdx);
+    html += buildShishenColumn('今日十神', ganzhiDay, userIdx);
+
+    section.innerHTML = html;
+}
+
+function updateScorePanel() {
+    renderCalendar();
+    renderDailyShishen();
+}
+
+updateScorePanel();
+
+// ══════════════════════════════════════════════
+// 老黄历信息面板 — 使用 lunar.js (6tail) 计算
+// ══════════════════════════════════════════════
+var _lastHuangLiDate = '';
+function updateHuangLi() {
+    var panel = document.getElementById('huangli-panel');
+    if (!panel) return;
+    if (typeof Lunar === 'undefined') {
+        panel.innerHTML = '<span style="opacity:0.5;z-index:3;position:relative;">黄历库加载中...</span>';
+        return;
+    }
+    try {
+        var now = new Date();
+        var dateKey = now.getFullYear() + '-' + (now.getMonth()+1) + '-' + now.getDate();
+        if (dateKey === _lastHuangLiDate) return;
+        _lastHuangLiDate = dateKey;
+
+        var lunar = Lunar.fromDate(now);
+
+        // 冲煞
+        var chong = lunar.getDayChongShengXiao ? lunar.getDayChongShengXiao() : '';
+        var sha = lunar.getDaySha ? lunar.getDaySha() : '';
+
+        // 彭祖百忌 — 分天干+地支两部分拼接
+        var pengzuGan = lunar.getPengZuGan ? lunar.getPengZuGan() : '';
+        var pengzuZhi = lunar.getPengZuZhi ? lunar.getPengZuZhi() : '';
+        var pengzu = (pengzuGan && pengzuZhi) ? (pengzuGan + ' ' + pengzuZhi) : (pengzuGan || pengzuZhi || '');
+
+        // 吉神方位 — getDayPositionXi() 返回字符串（卦名），getDesc() 返回方向
+        var xiDesc = '', fuDesc = '', caiDesc = '';
+        try { xiDesc = lunar.getDayPositionXiDesc ? lunar.getDayPositionXiDesc() : ''; } catch(e) { xiDesc = ''; }
+        try { fuDesc = lunar.getDayPositionFuDesc ? lunar.getDayPositionFuDesc() : ''; } catch(e) { fuDesc = ''; }
+        try { caiDesc = lunar.getDayPositionCaiDesc ? lunar.getDayPositionCaiDesc() : ''; } catch(e) { caiDesc = ''; }
+
+        // 凶神方位
+        var xiongSha = [];
+        try { xiongSha = lunar.getDayXiongSha ? lunar.getDayXiongSha() : []; } catch(e) {}
+
+        // 宜忌
+        var yi = [];
+        var ji = [];
+        try { yi = lunar.getDayYi ? lunar.getDayYi() : []; } catch(e) {}
+        try { ji = lunar.getDayJi ? lunar.getDayJi() : []; } catch(e) {}
+
+        var yiShow = yi.slice(0, 5);
+        var jiShow = ji.slice(0, 5);
+
+        // 构建 HTML
+        var html = '';
+
+        // 第一行: 冲煞 + 彭祖百忌
+        html += '<div class="hl-row">';
+        html += '<div class="hl-section">';
+        html += '<div class="hl-label">冲煞</div>';
+        html += '<div class="hl-chongsha">';
+        html += '冲<span style="color:#F56C6C;">' + (chong || '—') + '</span>';
+        if (sha && sha !== '—') {
+            html += '<span class="sha">煞<span style="color:#E6A23C;">' + sha + '</span></span>';
+        }
+        html += '</div></div>';
+        html += '<div class="hl-section">';
+        html += '<div class="hl-label">彭祖百忌</div>';
+        html += '<div class="hl-pengzu">' + (pengzu || '—') + '</div>';
+        html += '</div></div>';
+
+        // 分隔线
+        html += '<hr class="hl-divider">';
+
+        // 第二行: 吉神方位 + 凶神方位（并列）
+        html += '<div class="hl-row">';
+
+        // 吉神方位
+        html += '<div class="hl-section">';
+        html += '<div class="hl-label">吉神方位</div>';
+        html += '<div class="hl-shen-pos">';
+        html += '<div class="hl-shen-item"><span class="shen-icon">喜</span><span>' + (xiDesc || '—') + '</span></div>';
+        html += '<div class="hl-shen-item"><span class="shen-icon">福</span><span>' + (fuDesc || '—') + '</span></div>';
+        html += '<div class="hl-shen-item"><span class="shen-icon">财</span><span>' + (caiDesc || '—') + '</span></div>';
+        html += '</div></div>';
+
+        // 凶神
+        html += '<div class="hl-section hl-xiongsha">';
+        html += '<div class="hl-label">凶神</div>';
+        if (xiongSha.length > 0) {
+            html += '<div class="xiong-list">' + xiongSha.join(' \u00B7 ') + '</div>';
+        } else {
+            html += '<span style="opacity:0.5;">—</span>';
+        }
+        html += '</div>';
+
+        html += '</div>'; // hl-row
+
+        // 分隔线
+        html += '<hr class="hl-divider">';
+
+        // 第三行: 宜忌
+        html += '<div class="hl-row">';
+        html += '<div class="hl-yiji" style="display:flex;gap:28px;flex-wrap:wrap;width:100%;">';
+        html += '<div class="hl-yi" style="flex:1 1 200px;">';
+        html += '<div class="hl-label">宜</div>';
+        if (yiShow.length > 0) {
+            html += yiShow.map(function(item) { return '<span class="item">' + item + '</span>'; }).join(' · ');
+        } else {
+            html += '<span style="opacity:0.5;">—</span>';
+        }
+        html += '</div>';
+        html += '<div class="hl-ji" style="flex:1 1 200px;">';
+        html += '<div class="hl-label">忌</div>';
+        if (jiShow.length > 0) {
+            html += jiShow.map(function(item) { return '<span class="item">' + item + '</span>'; }).join(' · ');
+        } else {
+            html += '<span style="opacity:0.5;">—</span>';
+        }
+        html += '</div>';
+        html += '</div></div>';
+
+        panel.innerHTML = html;
+    } catch(e) {
+        panel.innerHTML = '<span style="opacity:0.5;z-index:3;position:relative;">黄历数据获取失败</span>';
+    }
+}
+updateHuangLi();
+
+// WE wallpaperPropertyListener
+window.wallpaperPropertyListener = {
+    applyGeneralProperties: function(props) {
+        if (props.fps !== undefined) {
+            if (props.fps > 0) {
+                // 时钟每60帧才需刷新一次（秒针每秒移动一次，高频更新无意义且浪费CPU）
+                _clockInterval = Math.max(1000, Math.round(1000 / Math.min(props.fps, 60)));
+                if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
+                updateTimer = setInterval(updateClockDisplay, _clockInterval);
+            } else if (props.fps === 0) {
+                if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
+                if (fullUpdateTimer) { clearInterval(fullUpdateTimer); fullUpdateTimer = null; }
+            }
+        }
+    },
+    applyUserProperties: function(properties) {
+        var needReapply = false;
+        var needReinit = false;
+
+        if (properties.bgtype && properties.bgtype.value) {
+            currentBgType = properties.bgtype.value;
+            needReapply = true;
+        }
+
+        // 粒子风格切换
+        if (properties.particlestyle && properties.particlestyle.value) {
+            particleConfig.style = properties.particlestyle.value;
+            // 雷法粒子需要 lightning canvas，其他风格隐藏
+            var lc = document.getElementById('lightning-canvas');
+            if (lc && currentBgType === 'particles') {
+                lc.style.display = (particleConfig.style === 'thunder') ? '' : 'none';
+            }
+            needReinit = true;
+        }
+        // 粒子配色模式
+        if (properties.particlecolormode && properties.particlecolormode.value) {
+            particleColorMode = properties.particlecolormode.value;
+            needReinit = true;
+        }
+        // 粒子颜色
+        if (properties.particlecolor && properties.particlecolor.value) {
+            var cArr = properties.particlecolor.value.split(' ');
+            var r = Math.ceil(parseFloat(cArr[0]) * 255);
+            var g = Math.ceil(parseFloat(cArr[1]) * 255);
+            var b = Math.ceil(parseFloat(cArr[2]) * 255);
+            particleColorHex = '#' + [r, g, b].map(function(v) { return v.toString(16).padStart(2, '0'); }).join('');
+            if (particleColorMode === 'solid') { needReinit = true; }
+        }
+        // 粒子可调参数 — 直接取值（slider min/max 已约束范围）
+        if (properties.particlecount !== undefined) { particleConfig.count = properties.particlecount.value; needReinit = true; }
+        if (properties.particlespeed !== undefined) { particleConfig.speed = properties.particlespeed.value; needReinit = true; }
+        if (properties.particlesize !== undefined) { particleConfig.size = properties.particlesize.value; needReinit = true; }
+        if (properties.particleopacity !== undefined) { particleConfig.opacity = properties.particleopacity.value / 10; needReinit = true; }
+        if (properties.lineenable !== undefined) { particleConfig.lineEnable = properties.lineenable.value; needReinit = true; }
+        if (properties.linedistance !== undefined) { particleConfig.lineDistance = properties.linedistance.value; needReinit = true; }
+        if (properties.lineopacity !== undefined) { particleConfig.lineOpacity = properties.lineopacity.value / 10; needReinit = true; }
+        if (properties.movedirection && properties.movedirection.value) { particleConfig.direction = properties.movedirection.value; needReinit = true; }
+
+        // 渐变参数
+        if (properties.gradientcolor1 && properties.gradientcolor1.value) {
+            var c = properties.gradientcolor1.value.split(' ');
+            gradientColors[0] = 'rgb(' + c.map(function(v) { return Math.ceil(v * 255); }).join(',') + ')';
+            if (currentBgType === 'gradient') { needReapply = true; }
+        }
+        if (properties.gradientcolor2 && properties.gradientcolor2.value) {
+            var c = properties.gradientcolor2.value.split(' ');
+            gradientColors[1] = 'rgb(' + c.map(function(v) { return Math.ceil(v * 255); }).join(',') + ')';
+            if (currentBgType === 'gradient') { needReapply = true; }
+        }
+        if (properties.gradientcolor3 && properties.gradientcolor3.value) {
+            var c = properties.gradientcolor3.value.split(' ');
+            gradientColors[2] = 'rgb(' + c.map(function(v) { return Math.ceil(v * 255); }).join(',') + ')';
+            if (currentBgType === 'gradient') { needReapply = true; }
+        }
+        if (properties.gradientangle !== undefined) { gradientAngle = properties.gradientangle.value; if (currentBgType === 'gradient') { needReapply = true; } }
+        if (properties.gradienttype && properties.gradienttype.value) { gradientType = properties.gradienttype.value; if (currentBgType === 'gradient') { needReapply = true; } }
+        if (properties.gradientspeed !== undefined) {
+            gradientSpeed = properties.gradientspeed.value;
+            if (currentBgType === 'gradient') { needReapply = true; }
+        }
+
+        // 纯色
+        if (properties.bgcolor && properties.bgcolor.value) {
+            var rgb = properties.bgcolor.value.split(' ');
+            bgSolidColor = 'rgb(' + rgb.map(function(v) { return Math.ceil(v * 255); }).join(', ') + ')';
+            if (currentBgType === 'color') { needReapply = true; }
+        }
+        // 图片
+        if (properties.bgimage && properties.bgimage.value) {
+            bgImagePath = properties.bgimage.value;
+            if (currentBgType === 'image') { needReapply = true; }
+        }
+        // 视频
+        if (properties.videofile && properties.videofile.value) {
+            bgVideoPath = properties.videofile.value;
+            if (currentBgType === 'video') { needReapply = true; }
+        }
+        // 轮播间隔
+        if (properties.slideshowinterval !== undefined) {
+            bgSlideInterval = properties.slideshowinterval.value;
+            if (bgSlideFiles.length > 1 && currentBgType === 'slideshow') { startSlideshow(); }
+        }
+        // 音频律动
+        if (properties.audioreactive !== undefined) {
+            audioReactive = properties.audioreactive.value;
+            if (!audioReactive || currentBgType !== 'particles') { audioModTimerActive = false; stopAudioMod(); }
+            else { audioModTimerActive = true; startAudioMod(); }
+        }
+        if (properties.audiosensitivity !== undefined) {
+            audioSensitivity = properties.audiosensitivity.value / 5;
+        }
+        if (properties.audiobass !== undefined) {
+            audioBass = properties.audiobass.value / 5;
+        }
+        if (properties.audiotreble !== undefined) {
+            audioTreble = properties.audiotreble.value / 5;
+        }
+        // 暗色主题
+        if (properties.darktheme !== undefined) {
+            var dark = properties.darktheme.value;
+            var body = document.body;
+            if (dark && body.classList.contains('animated-background-light')) {
+                body.classList.remove('animated-background-light'); body.classList.add('animated-background-dark');
+            } else if (!dark && body.classList.contains('animated-background-dark')) {
+                body.classList.remove('animated-background-dark'); body.classList.add('animated-background-light');
+            }
+            updateTime();
+        }
+        // 液态玻璃参数
+        if (properties.glassopacity !== undefined) { glassSettings.opacity = properties.glassopacity.value; applyGlassSettings(); }
+        if (properties.glassblur !== undefined) { glassSettings.blur = properties.glassblur.value; applyGlassSettings(); }
+        if (properties.glasssaturation !== undefined) { glassSettings.saturate = properties.glasssaturation.value; applyGlassSettings(); }
+        if (properties.glassborder !== undefined) { glassSettings.border = properties.glassborder.value; applyGlassSettings(); }
+
+        // 标题显示/隐藏
+        if (properties.showtitle !== undefined) {
+            var titleEl = document.getElementById('dao-title');
+            if (titleEl) { titleEl.style.display = properties.showtitle.value ? '' : 'none'; }
+        }
+
+        // 个人日干切换
+        if (properties.userRiGan && properties.userRiGan.value) {
+            window.userRiGan = properties.userRiGan.value;
+            updateScorePanel();
+        }
+
+
+        if (needReinit) {
+            ensureParticlesInit();  // 确保粒子已初始化
+            applyParticleParamsToInstance();  // 立即更新参数（不等 debounce）
+            reinitParticles();  // 异步完整重建（处理风格切换等）
+        }
+        if (needReapply) { applyCustomBackground(); }
+    },
+    setPaused: function(paused) {
+        if (paused) {
+            // 停止渐变动画
+            stopGradAnimation();
+            // 停止时钟定时器
+            if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
+            if (fullUpdateTimer) { clearInterval(fullUpdateTimer); fullUpdateTimer = null; }
+            // 停止音频调制定时器
+            stopAudioMod();
+            // 移除 particlesJS 内部 resize 监听器（防泄漏）
+            if (_particlesResizeFn) {
+                window.removeEventListener('resize', _particlesResizeFn);
+                _particlesResizeFn = null;
+            }
+            // 移除其他 resize 监听器（fixPos / resizeLightning）
+            if (_resizeActive) {
+                for (var ri = 0; ri < _resizeHandlers.length; ri++) {
+                    window.removeEventListener('resize', _resizeHandlers[ri].debounced);
+                }
+                _resizeActive = false;
+            }
+            // 停止粒子渲染循环 — 清空 pJSDom 并移除 canvas
+            if (window.pJSDom && window.pJSDom.length > 0) {
+                for (var i = 0; i < window.pJSDom.length; i++) {
+                    try { if (window.pJSDom[i].pJS && window.pJSDom[i].pJS.fn) window.pJSDom[i].pJS.fn.canvas.clear(); } catch(e) {}
+                }
+                window.pJSDom = [];
+            }
+            var particlesEl = document.getElementById('particles-js');
+            if (particlesEl) { while (particlesEl.firstChild) { particlesEl.removeChild(particlesEl.firstChild); } }
+            // 暂停 CSS 动画 + JS 发光
+            var animated = document.querySelectorAll('.floating');
+            for (var a = 0; a < animated.length; a++) { animated[a].style.animationPlayState = 'paused'; }
+            _stopGlow();
+            // 清零音频频谱（防止恢复时使用残留数据）
+            audioSpectrum = new Array(128).fill(0);
+            audioEnabled = false;
+            // 释放视频解码资源
+            if (bgVideoEl) { bgVideoEl.pause(); bgVideoEl.removeAttribute('src'); try { bgVideoEl.load(); } catch(e) {} bgVideoEl.style.display = 'none'; }
+            // 清空轮播定时器
+            stopSlideshow();
+        } else {
+            // 恢复 CSS 动画 + JS 发光
+            var animated = document.querySelectorAll('.floating');
+            _startGlow();
+            for (var a = 0; a < animated.length; a++) { animated[a].style.animationPlayState = ''; }
+            // 恢复 resize 监听器
+            if (!_resizeActive) {
+                for (var ri = 0; ri < _resizeHandlers.length; ri++) {
+                    window.addEventListener('resize', _resizeHandlers[ri].debounced);
+                }
+                _resizeActive = true;
+            }
+            // 恢复渐变背景
+            if (currentBgType === 'gradient') applyCustomBackground();
+            // 恢复时钟定时器（使用保存的 FPS 间隔，而非硬编码 1000）
+            if (!updateTimer) { updateTimer = setInterval(updateClockDisplay, _clockInterval); updateClockDisplay(); }
+            if (!fullUpdateTimer) { fullUpdateTimer = setInterval(function() { updateTime(); updateHuangLi(); updateScorePanel(); }, 10000); updateTime(); updateHuangLi(); updateScorePanel(); }
+            // 恢复音频调制（仅在粒子+音频律动开启时恢复）
+            if (currentBgType === 'particles' && audioReactive) { audioModTimerActive = true; startAudioMod(); }
+            // 恢复粒子渲染：取消 applyUserProperties 可能触发的异步重建，避免双重初始化
+            clearTimeout(reinitTimer);
+            reinitTimer = null;
+            if (currentBgType === 'particles') { _doReinitParticles(); }
+        }
+    },
+    userDirectoryFilesAddedOrChanged: function(propertyName, changedFiles) {
+        if (propertyName === 'bgdir') { onDirectoryFilesChanged(changedFiles); }
+    },
+    userDirectoryFilesRemoved: function(propertyName, removedFiles) {
+        if (propertyName === 'bgdir') {
+            var removedSet = {};
+            for (var i = 0; i < removedFiles.length; i++) { removedSet[removedFiles[i]] = true; }
+            bgSlideFiles = bgSlideFiles.filter(function(f) { return !removedSet[f]; });
+            bgSlideIndex = Math.min(bgSlideIndex, bgSlideFiles.length - 1);
+            if (bgSlideFiles.length === 0) { stopSlideshow(); }
+        }
+    }
+};
+
+// ══════════════════════════════════════════════
+// 音频可视化 — 监听 + 粒子直接修改
+// ══════════════════════════════════════════════
+// 监听器按需注册：一旦注册，WE 将持续进行 FFT 计算（约 30fps），无法撤销。
+// 因此延迟到用户首次启用「粒子+音频律动」时才注册，纯色/渐变等背景完全避开。
+var _audioListenerRegistered = false;
+function ensureAudioListener() {
+    if (_audioListenerRegistered) return;
+    if (typeof window.wallpaperRegisterAudioListener !== 'function') return;
+    _audioListenerRegistered = true;
+    window.wallpaperRegisterAudioListener(function(audioArray) {
+        for (var i = 0; i < 128; i++) {
+            audioSpectrum[i] = audioArray[i];
+        }
+        audioEnabled = true;
+    });
+}
+
+// ══════════════════════════════════════════════
+// 雷祖圣号发光动画 — JS驱动 ~10fps（替代 CSS 60fps，降 6 倍帧率）
+// ══════════════════════════════════════════════
+var _glowPhase = 0;
+var _glowTimer = null;
+var _glowActive = true;
+var _glowEl = null;
+function _glowStep() {
+    if (!_glowActive) { _glowTimer = null; return; }
+    if (!_glowEl) _glowEl = document.querySelector('#dao-title h1');
+    if (_glowEl) {
+        _glowPhase += 0.06;
+        var t = (Math.sin(_glowPhase) + 1) / 2;
+        _glowEl.style.textShadow = '0 0 ' + (5 + t * 13).toFixed(1) + 'px rgba(' + Math.round(255 - t * 40) + ',' + Math.round(215 - t * 146) + ',0,' + (0.3 + t * 0.2).toFixed(2) + ')';
+    }
+    _glowTimer = setTimeout(_glowStep, 100);
+}
+function _startGlow() { _glowActive = true; _glowStep(); }
+function _stopGlow() { _glowActive = false; if (_glowTimer) { clearTimeout(_glowTimer); _glowTimer = null; } }
+_startGlow();
+
+// 递归分形闪电绘制
+function drawLightningFractal(ctx, x1, y1, x2, y2, displace, thickness) {
+    if (displace < thickness) {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        return;
+    }
+    var midX = (x1 + x2) / 2 + (Math.random() - 0.5) * displace;
+    var midY = (y1 + y2) / 2 + (Math.random() - 0.5) * displace;
+    drawLightningFractal(ctx, x1, y1, midX, midY, displace / 2, thickness);
+    drawLightningFractal(ctx, midX, midY, x2, y2, displace / 2, thickness);
+    // 分支
+    if (Math.random() < 0.35 && displace > 12) {
+        var bx = midX + (Math.random() - 0.5) * displace * 0.6;
+        var by = midY + displace * 0.4;
+        drawLightningFractal(ctx, midX, midY, bx, Math.min(ctx.canvas.height, by), displace / 3, thickness * 0.5);
+    }
+}
+
+// 音频调制定时器: 每 80ms 直接修改每个粒子的半径、透明度、速度，以及雷法闪电/RGB循环
+var audioModTimer = null;
+function audioModStep() {
+    if (!audioEnabled || !audioReactive || !audioModTimerActive) return;
+    try {
+        // 快速能量检测：无音频时提前退出，避免遍历全部粒子
+        var totalEnergy = 0;
+        for (var ei = 0; ei < 128; ei++) totalEnergy += audioSpectrum[ei];
+        if (totalEnergy < 0.001) return;
+
+        var pdom = window.pJSDom;
+        if (!pdom || pdom.length === 0) return;
+        var p = pdom[pdom.length - 1].pJS;
+        if (!p || !p.particles || !p.particles.array) return;
+
+        // 频谱能量
+        var bass = 0, treble = 0, mid = 0;
+        for (var i = 0; i < 20; i++) bass += audioSpectrum[i];
+        for (var j = 40; j < 80; j++) mid += audioSpectrum[j];
+        for (var k = 80; k < 128; k++) treble += audioSpectrum[k];
+        bass = bass / 20 * audioBass * audioSensitivity;
+        mid = mid / 40 * audioSensitivity;
+        treble = treble / 48 * audioTreble * audioSensitivity;
+
+        var energy = (bass + mid + treble) / 3;
+
+        var sizeMul = 1.0 + energy * 4.0;
+        var distMul = 1.0 + bass * 2.5;
+        var speedMul = 1.0 + bass * 6.0;
+
+        // 线距
+        p.particles.line_linked.distance = Math.max(15, particleConfig.lineDistance * distMul);
+
+        // 逐个粒子
+        var arr = p.particles.array;
+        var style = particleConfig.style;
+        var now = Date.now();
+
+        // 雷法闪电逻辑：仅音频有能量时才触发
+        if (style === 'thunder') {
+            if (now >= thunderFlashTimer && energy > 0.05) {
+                thunderFlashTimer = now + (Math.random() * 3000 + 2000);
+                thunderFlashDuration = 250;
+                // 绘制分形闪电
+                var lc = document.getElementById('lightning-canvas');
+                if (lc) {
+                    var lctx = lc.getContext('2d');
+                    lctx.clearRect(0, 0, lc.width, lc.height);
+                    lc.style.opacity = '1';
+                    lctx.strokeStyle = 'rgba(220,230,255,0.95)';
+                    lctx.shadowBlur = 18;
+                    lctx.shadowColor = 'rgba(180,200,255,0.9)';
+                    lctx.lineCap = 'round';
+                    var bolts = 2 + Math.floor(Math.random() * 3);
+                    for (var bi = 0; bi < bolts; bi++) {
+                        var sx = Math.random() * lc.width;
+                        var ex = sx + (Math.random() - 0.5) * lc.width * 0.5;
+                        drawLightningFractal(lctx, sx, 0, ex, lc.height, 100, 4);
+                    }
+                }
+            }
+            // 渐隐闪电画布
+            var lc = document.getElementById('lightning-canvas');
+            if (lc) {
+                var op = parseFloat(lc.style.opacity) || 0;
+                if (op > 0) {
+                    lc.style.opacity = Math.max(0, op - 0.03);
+                }
+            }
+        }
+
+        for (var ii = 0; ii < arr.length; ii++) {
+            var pt = arr[ii];
+            if (pt._baseR === undefined) {
+                pt._baseR = pt.radius;
+                pt._baseO = (typeof pt.opacity === 'number') ? pt.opacity : 0.5;
+                pt._baseVx = pt.vx;
+                pt._baseVy = pt.vy;
+                // 保存粒子原始 HSL（particles.js 的 color 是 {h,s,l} 对象）
+                if (pt.color && typeof pt.color.h !== 'undefined') {
+                    pt._baseH = pt.color.h;
+                    pt._baseS = pt.color.s;
+                    pt._baseL = pt.color.l;
+                }
+            }
+
+            // 速度调制
+            pt.vx = pt._baseVx * speedMul;
+            pt.vy = pt._baseVy * speedMul;
+
+            // RGB 循环: 按时间+粒子索引动态HSL（非雷法闪电时）
+            var isRGB = (particleColorMode === 'rgbcycle');
+            var isThunderFlash = (style === 'thunder' && thunderFlashDuration > 0);
+
+            if (isThunderFlash) {
+                var elapsed = now - (thunderFlashTimer - 250);
+                var flashProgress = Math.max(0, 1 - elapsed / 250);
+                if (pt.color && typeof pt.color.h !== 'undefined') {
+                    pt.color.h = pt._baseH;
+                    pt.color.s = Math.max(10, pt._baseS * (1.0 - flashProgress * 0.7));
+                    pt.color.l = Math.min(90, pt._baseL + flashProgress * 40);
+                }
+                pt.radius = Math.max(0.3, pt._baseR * (1.0 + flashProgress * 2.0));
+                if (typeof pt.opacity === 'number') {
+                    pt.opacity = Math.min(1, pt._baseO * (1.0 + flashProgress * 1.5));
+                }
+            } else {
+                // 正常模式：thunder固定尺寸，其他风格音频调制
+                if (isRGB && pt.color && typeof pt.color.h !== 'undefined') {
+                    pt.color.h = ((now * 0.05 + ii * 17) % 360);
+                    pt.color.s = 70;
+                    pt.color.l = 55;
+                } else if (pt.color && typeof pt.color.h !== 'undefined' && pt._baseH !== undefined) {
+                    // 恢复原始颜色（从闪电或 RGB 恢复）
+                    pt.color.h = pt._baseH;
+                    pt.color.s = pt._baseS;
+                    pt.color.l = pt._baseL;
+                }
+                pt.radius = (style === 'thunder') ? Math.max(0.3, pt._baseR) : Math.max(0.3, Math.min(pt._baseR * 5, pt._baseR * sizeMul));
+                if (typeof pt.opacity === 'number') {
+                    pt.opacity = Math.min(1, pt._baseO * (0.6 + energy * 3));
+                }
+            }
+        }
+
+        // 雷法: 连线颜色也闪
+        if (style === 'thunder' && thunderFlashDuration > 0) {
+            var elapsed2 = now - (thunderFlashTimer - 250);
+            var fp = Math.max(0, 1 - elapsed2 / 250);
+            var w2 = Math.round(255 * fp);
+            p.particles.line_linked.color = '#' +
+                Math.min(255, 58 + w2).toString(16).padStart(2, '0') +
+                Math.min(255, 58 + w2).toString(16).padStart(2, '0') +
+                Math.min(255, 142 + w2).toString(16).padStart(2, '0');
+        } else if (style === 'thunder') {
+            p.particles.line_linked.color = '#3a3a8e';
+        }
+    } catch(e) { console.warn('[音频] 调制失败:', e); }
+}
+function startAudioMod() { ensureAudioListener(); if (!audioModTimer) audioModTimer = setInterval(audioModStep, 80); }
+function stopAudioMod() { if (audioModTimer) { clearInterval(audioModTimer); audioModTimer = null; } }
+// 音频调制不再无条件启动——由 applyCustomBackground 按 bgtype 控制
+</script>
+
+<!-- 璇玑特效层（WebGL2）：作为新 bgtype 叠加，原生背景模式不受影响 -->
+<script src="effects/fx.js"></script>
+<script src="effects/starfield.js"></script>
+<script src="effects/ink.js"></script>
+<script src="effects/thunder.js"></script>
+<script src="effects/flowfield.js"></script>
+
+</body>
+</html>

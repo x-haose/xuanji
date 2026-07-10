@@ -1,0 +1,90 @@
+# 璇玑 Xuanji
+
+跨平台东方玄学**动态壁纸**。产品名「璇玑」（不带「壁纸」二字），英文 `Xuanji`，副标题「东方玄学动态壁纸」。取自北斗「璇玑玉衡」——上古演算天象历数的旋转天文仪器。
+
+- 仓库/包名/标识：`xuanji`
+- macOS Bundle ID：`dev.xuanji.app`（占位，有域名再换）
+- 目标平台：**Windows + macOS 起步**，Linux 后续（Wayland 仅 wlroots 系）
+- 支持版本（不求全兼容，够用即止）：**Windows 10 22H2（64 位）+ Windows 11**（依赖 WebView2 Runtime；砍 32 位 / Win10 EOL 前版本 / Win7·8）；**macOS 14.6 Sonoma 及以上**（含 15 / 26，Apple Silicon+Intel）。mac 地板定在 14.6 = CoreAudio tap 音频律动的下限，全功能零降级分支。
+
+## 由来与核心决策
+
+源自一个 Wallpaper Engine 壁纸：`~/Downloads/干支四化流注/`（`干支四化流注.html` 2252 行 + `particles.min.js` + `LunarCalendar.min.js` + `assets/js/lunar.js`）。功能：八字天干地支、紫微斗数四化、五运六气、万年历、个人十神日历，背景支持粒子/渐变/纯色/图片/视频/轮播 + 音频律动。
+
+**架构决策（已定，勿推翻）：保留 Web 核心，用 Rust 造壳。**
+
+那份 HTML 本质是普通静态网页，WE 只提供了 4 件事，脱离 WE 就是自己补上：桌面壁纸层描画、系统音频 FFT、原生文件对话框、设置注入。
+
+- **不重写占卜逻辑，不上 Bevy/wgpu 原生渲染。** 壁纸 80% 画面是复杂 CJK 排版 + 玻璃拟态，是 HTML/CSS 主场；原生渲染要重造文字引擎，方向相反且有「做得比原版差」的风险。保留 Web 核心 = 逐像素等同原版，天然锁死「≥ 原版」地板。
+- **要着色器不等于要原生渲染**：特效走 WebView 内的 canvas。**基线 = WebGL2**（WKWebView/WebView2 都无版本门槛全稳，粒子/流体/噪声场全能扛）；**WebGPU 只作渐进增强**——系统 WebView 覆盖面窄（mac 仅 26+ Apple Silicon，Win WebView2 需注入 `--enable-features` flag），运行时 `navigator.gpu` 探测命中才走高清路径。
+- **新特效一律增量叠加，原 canvas 粒子模式永远保留为兜底**——「一定不比原版差」由架构保证。
+
+## 技术栈（只用现役库，杜绝过期）
+
+- 壳框架：`tao`（窗口）+ `wry`（WebView，用系统内置引擎，不打包 Chromium）。壁纸窗口非常规，不套完整 Tauri 以免其窗口管理打架。**`wry` 锁 ≥ 0.55.1**——旧版 `build_as_child` 在 macOS 26 Tahoe 会 ObjC 崩溃且 `catch_unwind` 抓不住，0.55.0 才修。
+- 窗口句柄：`raw-window-handle 0.6`
+- Windows 壁纸层：`windows` crate（**非** `winapi`），给 `Progman` 发 `0x052C` 生成 `WorkerW`，`SetParent` 挂为其子窗口。**Win11 24H2 起 WorkerW 开机后非立即存在**，须防御：`0x052C` 发两次+延迟、轮询等 WorkerW 出现、监听 DWM 崩溃/壁纸切换后重建、退出时 `SetParent(NULL)`+刷新桌面。
+- macOS 壁纸层：`objc2` + `objc2-app-kit`（**非**已进入维护期的 `cocoa`），`NSWindow.level` = desktop+1（夹在真壁纸之上、图标之下）、`collectionBehavior` 全 Space、`ignoresMouseEvents` 点击穿透；styleMask 用 `.borderless`（带 `.titled` 会让全 Space 失效）。
+- 音频：**两平台统一 `cpal`（0.18+）+ `rustfft`（6.4+）**。Win = WASAPI loopback；mac = CoreAudio loopback（底层 macOS 14.2+ 的 Core Audio process tap，cpal 已内建）。**不用 `ScreenCaptureKit`**——它要屏幕录制权限，对壁纸程序体验灾难，且 cpal 相关 PR 已废弃。mac 音频律动地板 = **macOS 14.6**，13–14.5 区间标「律动降级不可用」。
+- 错误处理：`Result` + `thiserror`，生产路径不 `unwrap`
+- Web 特效层新代码：TypeScript strict
+- **平台层参考**：`ownself/wewa`（GitHub，Rust 同栈网页壁纸）的 `platform/windows/wallpaper.rs`、`platform/macos/wallpaper.rs` 是已验证的 WorkerW/NSWindow 魔数与调用序列活文档。**只读思路、照公共技术自己重写，绝不 fork**——它无 LICENSE（法律上不可复制）且版本全面落后（wry 0.44 / `cocoa` / windows 0.52）。
+
+## WE API shim 契约
+
+页面依赖两个全局，壳侧复刻，页面「以为还在 WE 里」：
+
+- `window.wallpaperPropertyListener.applyUserProperties(props)` — 设置注入。属性键见 `~/Downloads/干支四化流注/project.json`：`bgtype/bgcolor/bgimage/videofile/bgdir/slideshowinterval`、`particlestyle/particlecolor(mode)/particlecount/particlespeed/particlesize/particleopacity/lineenable/linedistance/lineopacity/movedirection`、`gradientcolor*/gradientangle/gradienttype/gradientspeed`、`audioreactive/audiosensitivity/audiobass/audiotreble`、`darktheme`、`glassopacity/glassblur/glasssaturation/glassborder`、`showtitle`（雷祖圣号显隐）、`userRiGan`（日干设置）、`fps`。全部保留，一个不删。
+- `window.wallpaperRegisterAudioListener(cb)` — 128 段 FFT 数组回调。
+
+## 质量契约（硬性）
+
+- 分层目录按功能组织：`os/`（壁纸层）`audio/` `ipc/` `settings/` `effects/`。单文件 200–400 行，上限 800。
+- 提交门槛：`cargo clippy -- -D warnings` + `rustfmt` 零告警；TS 侧 ESLint 零告警。不在源码写 `#![deny(warnings)]`（随工具链会脆断）。
+- 不可变优先、边界校验输入、错误显式处理、无一次性抽象（不为单实现造 trait / 不为不变值造 config）。
+- **注释**：只用 `///` 文档注释说明「是什么 / 为什么（非显而易见处）」；禁止过程叙述、对话式、解释显而易见代码的冗余注释。走捷径处用一行 `// ponytail:` 标注天花板与升级路径。
+- **验证**：干支/四化换算等纯函数留最小 `#[test]`/断言自检；OS 副作用留可手动跑的冒烟检查。不套框架。
+
+## 里程碑（按「视觉优先」重排）
+
+先把画面做到明显超过原版，再做设置功能，再上 Windows，最后打包。
+
+- **骨架**（✅ 完成）：`tao+wry` 起窗 + WE shim + 原版壁纸逐像素跑通（原 M0）。
+
+- **阶段一 · 显示（做到好看为止）**
+  - 1.1 基础显示收尾（✅ mac）：每 `NSScreen` 一窗一 webview，用原生 `NSScreen` frame 铺屏（绕开 tao 多屏坐标偏差）；`.accessory` 去 Dock 图标；各窗 alpha 淡入防闪。⏳ 显示器热插拔重建待补。
+  - 1.2 特效升级（✅ 四个 WebGL2 特效 + 后期处理 + 鼠标交互）：
+    - 引擎 `web/effects/fx.js`：全屏 canvas 垫底、rAF、注册表、包裹 `applyCustomBackground` 接线、`?fx=` 预览、`?fxdebug` HUD、卡片深色背衬保可读、**后期处理管线**（离屏 FBO → bloom 泛光 + 颗粒 + 暗角 + 边缘色散）。
+    - 四特效：`starfield`(星空北斗)/`ink`(水墨,单色墨调)/`thunder`(雷法,锯齿+分叉)/`flowfield`(流场星尘,transform-feedback GPU 粒子 + 拖尾流线)。作为新 `bgtype`，原生模式不受影响。
+    - **鼠标交互**：壳侧 `NSEvent` 全局监视器(不破穿透/无需授权) → proxy → 逐屏归一化 → `evaluate_script` 喂 `XuanjiFx.pointer` → `mouse{x,y,influence}`（平滑 + 空闲衰减,底层动画永不停）。响应：flowfield 漩涡气眼 / starfield 视差 / ink 搅墨 / thunder 光标劈雷。`XUANJI_FX="fx&fxmouse=auto"` 自测画圈。
+    - **五行驱动配色**：读日干(`#code-gan-day`)→五行→`XuanjiFx.accent` 主色（甲乙木青/丙丁火赤/戊己土黄/庚辛金白/壬癸水玄），四特效配色 + 星盘时钟光晕都据此染，每天自动换色（`--fx-accent` CSS 变量）。
+    - **特效深化**：ink 浓淡对比拉大；thunder 电光核心收细 + 三层云纵深；starfield 银河带 + 偶发流星；星盘时钟同心环光晕(加性 CSS，fx-active 门控)。
+    - 调试基建：`we-shim.js` 把 `console.*`/未捕获错误经 wry IPC 转发到 stderr（`[web] ...`）。
+    - **特效切换**（阶段二托盘雏形）：`XuanjiFx.select(name)` 热切换；壳侧三入口 →（a）菜单栏 `☯ 璇玑`（`NSStatusItem`+`NSMenu`，点选实时切）；（b）`XUANJI_FX=cycle` 每 12s 自动轮播；（c）全局快捷键 `⌃⌥→` 循环（代码就绪，但**裸二进制拿不到「输入监控」授权，须阶段四打成签名 `.app` 后才生效**）。
+    - **星盘时钟**：`enhanceClock` 给原表盘加性注入浑天仪叠层（同心环 + 二十八宿刻度 + 黄道/赤道斜环 + 十二地支）。地支按 **12 小时表盘上下午分组**（上午子—巳、下午午—亥，6 位置每 60°）落在时针对应钟点，`updateShichen` 按真实时间填充并高亮当前时辰；原阿拉伯数字/紫色读数经 JS 内联样式改掉；时钟块 `--clock-size:230`。
+    - **UI 改造**（全部 fx-active 门控、JS 注入、stop 还原；开发用 `python3 -m http.server` + headless Chrome 截图迭代，非盲调）：`enhanceBazi` 八字命盘大四柱（年月日时，干上支下，五行色）；`enhanceProgress` 本日进度发光圆环；`enhanceSihua` 四化彩色药丸（禄绿/权紫/科蓝/忌红 + 小标）；`enhanceBento` 宜忌拉成通栏页脚、内容排成两列网格；玻璃卡片分层阴影 + 顶部内高光边；卡片随光标 3D 微倾斜(`tiltCards`)。
+    - ⏳ 待深化：四化点星、bento 布局、真流体墨、flowfield 速度上色、`navigator.gpu`→WebGPU 增量。
+  - 1.3 音频律动（✅ mac）：`audio.rs` 用 `cpal` 对默认输出设备 `build_input_stream`（自动 Core Audio process tap，无需授权、不弹框）→ `rustfft` 128 段对数分桶 → 事件循环每 33ms `evaluate_script` 下发。`we-shim.js` 的 `__xuanjiPushAudio` 同时喂 WE 回调与 `XuanjiFx.setAudio`（分 bass/mid/treble，attack 0.6/decay 0.2 平滑）。四特效各自律动：starfield 鼓点胀星+星云明灭、ink 音量涌墨、flowfield 鼓点加速冲刺+提亮、thunder 重拍云海轻闪+额外闪电（阈值门控防泛白）。⏳ Win WASAPI 待阶段三验证。
+  - 1.4 视觉打磨：整体观感、过渡、默认配色，锁定「明显超过原版」。
+
+- **阶段二 · 功能（设置/配置/参数）**
+  - 2.1 设置系统：托盘（`tray-icon`）+ 设置窗口（另开普通 wry 窗），迁移 `project.json` 全部参数，文件/文件夹对话框（`rfd`）。
+  - 2.2 配置持久化（serde → config dir）+ IPC 热重载（改动实时 `applyUserProperties` 下发壁纸窗，不重启）。
+  - 2.3 每屏独立配置。
+
+- **阶段三 · 跨平台（Windows）**
+  - 3.1 Windows 壁纸层：WorkerW（`0x052C`）+ `SetParent` + 24H2 时序防御 + 多屏 + 退出清理。
+  - 3.2 Windows 音频：`cpal` WASAPI loopback 验证。
+  - 3.3 Windows 上跑通设置/特效/音频全链路。
+
+- **阶段四 · 打包发布**
+  - 4.1 资源内嵌：`rust-embed` 把 `web/` 打进二进制（替换现在的 dev 路径读取）。
+  - 4.2 开机自启、全屏应用暂停省电、自适应帧率（`fps`）。
+  - 4.3 安装包：Win MSI/NSIS，mac dmg + 签名公证。
+
+**当前状态**：**阶段一 · 显示（mac 侧）完成**。
+- M0：`tao 0.35 + wry 0.55.1` 起窗，`xuanji://` 协议 serve `web/`（路径穿越防护），注入 `we-shim.js`（`wallpaperRegisterAudioListener` 存根 + 加载后 fetch `project.json` 下发默认属性），原版壁纸逐像素跑起来。
+- M1 mac：`os/macos.rs` 把 `NSWindow` 沉到 `desktop+1`（`CGWindowLevelForKey` 运行时取值）+ 全 Space + 点击穿透 + 深灰底色；主屏满尺寸铺满。启动防闪：窗口先 `alpha=0` 映射离屏渲染，页面 `PageLoadEvent::Finished` +150ms 后 `alpha=1` 一步显示成品（1.5s 兜底），实测无白/蓝闪。`XUANJI_DEBUG_TOP=1` 调试开关（普通置顶不下沉）。
+- 阶段一：四 WebGL2 特效 + 后期处理 + 鼠标交互 + 五行配色 + 星盘时钟 + UI 改造（八字大四柱/进度环/四化药丸/宜忌通栏/玻璃分层）+ 音频律动，均 mac 侧跑通。
+- 门槛：clippy 零告警、fmt 干净、2 测试过。
+- **下一步**：阶段二 2.1 设置系统（托盘 + 设置窗 + `project.json` 参数迁移 + `rfd` 对话框），或阶段三 Windows 壁纸层。⏳ 遗留：显示器热插拔重建、阶段一 ⏳ 待深化项。

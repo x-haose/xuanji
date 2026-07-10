@@ -1,0 +1,28 @@
+[package]
+name = "xuanji"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.18.1"
+rustfft = "6.4.1"
+tao = "0.35"
+wry = "0.55"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+    "NSWindow",
+    "NSResponder",
+    "NSColor",
+    "NSScreen",
+    "NSEvent",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSMenu",
+    "NSMenuItem",
+    "block2",
+] }
+objc2-foundation = "0.3"
