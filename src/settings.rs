@@ -124,9 +124,11 @@ impl Settings {
             .unwrap_or_default()
     }
 
-    /// 校验并写覆盖项。`screen = None` 写全局层（与默认相同则移除以保持精简）；
-    /// `screen = Some(id)` 写该屏专属层（始终显式存，即便等于默认——用户明确要求此屏用该值，
-    /// 不因等于 schema 默认而回落到全局）。
+    /// 校验并写覆盖项。
+    /// `screen = None`（托盘 / 设置窗「所有屏」）= **所有屏统一**：写全局层（等于默认则移除以精简），
+    /// 并清掉各屏对该键的专属覆盖——「改所有屏」就该压过任何某屏专属，杜绝静默劫持切不动。
+    /// `screen = Some(id)`（设置窗选了某屏）= 只写该屏专属层（始终显式存，即便等于默认——
+    /// 用户明确要此屏用该值，不因等于 schema 默认而回落全局）。
     pub fn set(
         &mut self,
         key: &str,
@@ -145,6 +147,10 @@ impl Settings {
         }
         match screen {
             None => {
+                for m in self.persisted.screens.values_mut() {
+                    m.remove(key);
+                }
+                self.persisted.screens.retain(|_, m| !m.is_empty());
                 if value == prop.default {
                     self.persisted.overrides.remove(key);
                 } else {
@@ -336,6 +342,20 @@ mod tests {
             s.resolved_for(Some("other")).get("bgtype"),
             Some(&json!("ink"))
         );
+    }
+
+    #[test]
+    fn global_set_clears_per_screen_override() {
+        let mut s = temp_settings("globalclears");
+        s.set("bgtype", json!("ink"), Some("A")).unwrap(); // 屏A 专属
+        assert_eq!(s.resolved_for(Some("A")).get("bgtype"), Some(&json!("ink")));
+        s.set("bgtype", json!("thunder"), None).unwrap(); // 托盘/所有屏统一
+        // 屏A 专属被清，跟随全局；空屏条目一并移除。
+        assert_eq!(
+            s.resolved_for(Some("A")).get("bgtype"),
+            Some(&json!("thunder"))
+        );
+        assert!(s.persisted.screens.is_empty());
     }
 
     #[test]

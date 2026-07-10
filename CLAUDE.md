@@ -70,7 +70,7 @@
 - **阶段二 · 功能（设置/配置/参数）**
   - 2.1 设置系统（✅ mac）：`tray-icon` 跨平台托盘（背景子菜单 `CheckMenuItem` 勾选当前项，与设置下拉同源）+ 透明毛玻璃设置窗（另开 wry 窗）+ 迁移 `project.json` 全部参数 + `rfd` 文件/文件夹对话框。
   - 2.2 配置持久化 + IPC 热重载（✅ 一并完成）：`serde_json`→`directories` config dir（overrides-only + 命名预设），改动实时 `applyUserProperties` 下发不重启。
-  - 2.3 每屏独立配置（✅ mac）：`settings.rs` 加 per-screen 覆盖层，`resolved_for(screen)` = 默认 ⊕ 全局 ⊕ 该屏（该屏优先，即便等于 schema 默认也显式存不回落）；`set`/`ipc.Set`/`Pick` 加 `screen` 目标；壳侧屏键取 **CGDisplayID**（`os::screen_id`，回落显示器名/序号——同型号双屏也各异不撞车）；`set_and_broadcast` 按 target 只碰目标屏；设置窗注入屏列表 + 每屏解析值，Svelte 头部「作用范围」选择器（>1 屏才显示）。
+  - 2.3 每屏独立配置（✅ mac）：`settings.rs` 加 per-screen 覆盖层，`resolved_for(screen)` = 默认 ⊕ 全局 ⊕ 该屏（该屏优先，即便等于 schema 默认也显式存不回落）。壳侧屏键取 **CGDisplayID**（`os::screen_id`，回落显示器名/序号——同型号双屏也各异不撞车）；设置窗注入屏列表 + 每屏解析值，Svelte 头部「作用范围」选择器（>1 屏才显示），`ipc.Set`/`Pick` 带 `screen` 目标。两条关键语义（皆为踩坑后定）：① **`screen_scope`：per-screen 仅多屏生效**，单屏一律走全局——否则多屏设过、拔屏变单屏的遗留覆盖会静默劫持画面且单屏 UI 无入口解除；② **`set(…, None)` = 所有屏统一**（托盘天生全局唯一，「所有屏」操作清掉各屏对该键的专属覆盖 + 设全局），只有显式选某屏才写专属——杜绝「所有屏」切不动有覆盖的屏。
 
 - **阶段三 · 跨平台（Windows）**
   - 3.1 Windows 壁纸层：WorkerW（`0x052C`）+ `SetParent` + 24H2 时序防御 + 多屏 + 退出清理。
