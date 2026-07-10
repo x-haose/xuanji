@@ -60,7 +60,7 @@
     - **五行驱动配色**：读日干(`#code-gan-day`)→五行→`XuanjiFx.accent` 主色（甲乙木青/丙丁火赤/戊己土黄/庚辛金白/壬癸水玄），四特效配色 + 星盘时钟光晕都据此染，每天自动换色（`--fx-accent` CSS 变量）。
     - **特效深化**：ink 浓淡对比拉大；thunder 电光核心收细 + 三层云纵深；starfield 银河带 + 偶发流星；星盘时钟同心环光晕(加性 CSS，fx-active 门控)。
     - 调试基建：`we-shim.js` 把 `console.*`/未捕获错误经 wry IPC 转发到 stderr（`[web] ...`）。
-    - **特效切换**（阶段二托盘雏形）：`XuanjiFx.select(name)` 热切换；壳侧三入口 →（a）菜单栏 `☯ 璇玑`（`NSStatusItem`+`NSMenu`，点选实时切）；（b）`XUANJI_FX=cycle` 每 12s 自动轮播；（c）全局快捷键 `⌃⌥→` 循环（代码就绪，但**裸二进制拿不到「输入监控」授权，须阶段四打成签名 `.app` 后才生效**）。
+    - **特效切换**（阶段二已正式化）：`XuanjiFx.select(name)`=`forced` 覆盖，现仅 `?fx=` 预览用；正式切换已并入 `bgtype`（托盘背景子菜单 / 设置下拉，走 `set_and_broadcast`→持久化）。⌃⌥→ 循环快捷键 + mac 全局键监听已移除（都是背景了，单给特效循环别扭）。`XUANJI_FX=<name>` 仍可 URL 强制预览。
     - **星盘时钟**：`enhanceClock` 给原表盘加性注入浑天仪叠层（同心环 + 二十八宿刻度 + 黄道/赤道斜环 + 十二地支）。地支按 **12 小时表盘上下午分组**（上午子—巳、下午午—亥，6 位置每 60°）落在时针对应钟点，`updateShichen` 按真实时间填充并高亮当前时辰；原阿拉伯数字/紫色读数经 JS 内联样式改掉；时钟块 `--clock-size:230`。
     - **UI 改造**（全部 fx-active 门控、JS 注入、stop 还原；开发用 `python3 -m http.server` + headless Chrome 截图迭代，非盲调）：`enhanceBazi` 八字命盘大四柱（年月日时，干上支下，五行色）；`enhanceProgress` 本日进度发光圆环；`enhanceSihua` 四化彩色药丸（禄绿/权紫/科蓝/忌红 + 小标）；`enhanceBento` 宜忌拉成通栏页脚、内容排成两列网格；玻璃卡片分层阴影 + 顶部内高光边；卡片随光标 3D 微倾斜(`tiltCards`)。
     - ⏳ 待深化：四化点星、bento 布局、真流体墨、flowfield 速度上色、`navigator.gpu`→WebGPU 增量。
@@ -68,9 +68,9 @@
   - 1.4 视觉打磨：整体观感、过渡、默认配色，锁定「明显超过原版」。
 
 - **阶段二 · 功能（设置/配置/参数）**
-  - 2.1 设置系统：托盘（`tray-icon`）+ 设置窗口（另开普通 wry 窗），迁移 `project.json` 全部参数，文件/文件夹对话框（`rfd`）。
-  - 2.2 配置持久化（serde → config dir）+ IPC 热重载（改动实时 `applyUserProperties` 下发壁纸窗，不重启）。
-  - 2.3 每屏独立配置。
+  - 2.1 设置系统（✅ mac）：`tray-icon` 跨平台托盘（背景子菜单 `CheckMenuItem` 勾选当前项，与设置下拉同源）+ 透明毛玻璃设置窗（另开 wry 窗）+ 迁移 `project.json` 全部参数 + `rfd` 文件/文件夹对话框。
+  - 2.2 配置持久化 + IPC 热重载（✅ 一并完成）：`serde_json`→`directories` config dir（overrides-only + 命名预设），改动实时 `applyUserProperties` 下发不重启。
+  - 2.3 每屏独立配置（⏳ 待做）。架构已留扩展位：现为全局单一 overrides，未来加 per-monitor override。
 
 - **阶段三 · 跨平台（Windows）**
   - 3.1 Windows 壁纸层：WorkerW（`0x052C`）+ `SetParent` + 24H2 时序防御 + 多屏 + 退出清理。
@@ -82,9 +82,13 @@
   - 4.2 开机自启、全屏应用暂停省电、自适应帧率（`fps`）。
   - 4.3 安装包：Win MSI/NSIS，mac dmg + 签名公证。
 
-**当前状态**：**阶段一 · 显示（mac 侧）完成**。
-- M0：`tao 0.35 + wry 0.55.1` 起窗，`xuanji://` 协议 serve `web/`（路径穿越防护），注入 `we-shim.js`（`wallpaperRegisterAudioListener` 存根 + 加载后 fetch `project.json` 下发默认属性），原版壁纸逐像素跑起来。
-- M1 mac：`os/macos.rs` 把 `NSWindow` 沉到 `desktop+1`（`CGWindowLevelForKey` 运行时取值）+ 全 Space + 点击穿透 + 深灰底色；主屏满尺寸铺满。启动防闪：窗口先 `alpha=0` 映射离屏渲染，页面 `PageLoadEvent::Finished` +150ms 后 `alpha=1` 一步显示成品（1.5s 兜底），实测无白/蓝闪。`XUANJI_DEBUG_TOP=1` 调试开关（普通置顶不下沉）。
-- 阶段一：四 WebGL2 特效 + 后期处理 + 鼠标交互 + 五行配色 + 星盘时钟 + UI 改造（八字大四柱/进度环/四化药丸/宜忌通栏/玻璃分层）+ 音频律动，均 mac 侧跑通。
-- 门槛：clippy 零告警、fmt 干净、2 测试过。
-- **下一步**：阶段二 2.1 设置系统（托盘 + 设置窗 + `project.json` 参数迁移 + `rfd` 对话框），或阶段三 Windows 壁纸层。⏳ 遗留：显示器热插拔重建、阶段一 ⏳ 待深化项。
+**当前状态**：**阶段一 · 显示 + 阶段二 2.1/2.2 设置系统（mac 侧）完成**。
+- M0：`tao 0.35 + wry 0.55.1`（**wry 开 `transparent` feature**，否则透明代码被 gate 掉不编译）起窗，`xuanji://` 协议 serve `web/`（路径穿越防护），注入 `we-shim.js`，原版壁纸逐像素跑起来。
+- M1 mac：`os/macos.rs` 把壁纸 `NSWindow` 沉 `desktop+1` + 全 Space + 点击穿透 + 铺满多屏；`alpha=0`→页面就绪淡入防闪。`XUANJI_DEBUG_TOP=1` 普通置顶调试开关（可截图看壁纸）。
+- 阶段一：四 WebGL2 特效 + 后期处理 + 鼠标交互 + 五行配色 + 星盘时钟 + UI 改造 + 音频律动，均 mac 跑通。
+- **阶段二设置系统**：`settings.rs`（schema 驱动单一数据源，`project.json` 为唯一 schema 声明，加参数零 Rust 改动；overrides-only 持久化 + 命名预设）、`ipc.rs`（设置窗↔壳 JSON 协议）、`os/tray.rs`（tray-icon 托盘）。设置窗 = 透明 wry 窗 + `NSVisualEffectView` 毛玻璃 + `.accessory↔.regular` 激活切换前置 + 居中主屏；Svelte5+TS 数据驱动面板（读 `project.json` 自动渲染 + `condition` 联动显隐 + 玻璃五行）。托盘切背景与设置改参共用 `set_and_broadcast`。
+- **四特效并入 bgtype**：星汉灿烂/水墨氤氲/雷霆万钧/流光星尘 作为 `bgtype` 选项，与纯色/粒子互斥、可持久化（引擎本就支持 bgtype-as-effect，原版页面零改动）。
+- 关键坑（已解）：① 粒子在 WKWebView 整层不可见——we-shim body 不透明底盖住负 z-index 粒子层，且 **WKWebView 不合成负 z-index 2D canvas**，故底色只给 `html` + 抬粒子/闪电层到非负；② 配置下发须 `{value:}` 包装（WE 契约读 `props[key].value`）；③ 音频参数统一到 5 种律动背景并接进 `fx.js`（原先四特效无视这些参数）。
+- 显示器热插拔（✅）：事件循环轮询排布签名，变化则重建全部壁纸窗（每窗独立兜底淡入）。
+- 门槛：clippy 零告警、fmt 干净、14 测过、svelte-check 零错。
+- **下一步**：阶段二 2.3 每屏独立配置，或阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、阶段一 ⏳ 待深化项（真流体墨/flowfield 速度上色/WebGPU 增量）。开机自启留阶段四（需签名 `.app`）。
