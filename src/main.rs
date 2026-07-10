@@ -66,11 +66,18 @@ fn apply_to(screen: &Screen, props: &serde_json::Map<String, serde_json::Value>)
     let _ = screen.webview.evaluate_script(&js);
 }
 
-/// 给每块屏下发「它自己的」最终配置（各屏按 id 解析 per-screen ⊕ 全局 ⊕ 默认）。
-/// 用于全局性变更（预设/重置/bgtype）——已有专属覆盖的屏保留自身，不被全局值冲掉。
+/// 某屏解析配置时的有效作用域：**per-screen 覆盖仅在多屏时生效**。
+/// 单屏无「每屏差异」可言，且单屏 UI 无「作用范围」入口——若仍生效，历史遗留的
+/// 某屏覆盖会静默劫持画面且无从解除（多屏设过、拔屏变单屏即卡死）。故单屏一律走全局。
+fn screen_scope<'a>(screens: &[Screen], s: &'a Screen) -> Option<&'a str> {
+    (screens.len() > 1).then_some(s.id.as_str())
+}
+
+/// 给每块屏下发「它自己的」最终配置（多屏按 id 解析 per-screen ⊕ 全局 ⊕ 默认；单屏走全局）。
+/// 用于全局性变更（预设/重置/bgtype）——多屏时已有专属覆盖的屏保留自身，不被全局值冲掉。
 fn apply_all(screens: &[Screen], settings: &settings::Settings) {
     for s in screens {
-        apply_to(s, &settings.resolved_for(Some(&s.id)));
+        apply_to(s, &settings.resolved_for(screen_scope(screens, s)));
     }
 }
 
@@ -94,7 +101,7 @@ fn set_and_broadcast(
                 if target.is_some_and(|t| t != s.id) {
                     continue;
                 }
-                let resolved = settings.resolved_for(Some(&s.id));
+                let resolved = settings.resolved_for(screen_scope(screens, s));
                 if full {
                     apply_to(s, &resolved);
                 } else {
@@ -465,9 +472,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 });
             }
             Event::UserEvent(UserEvent::PageLoaded(i)) => {
-                // 页面就绪即下发该屏配置（壳侧为唯一配置来源，按屏 id 解析）。
+                // 页面就绪即下发该屏配置（壳侧为唯一配置来源，多屏按 id 解析、单屏走全局）。
                 if let Some(s) = screens.get(i) {
-                    apply_to(s, &settings.resolved_for(Some(&s.id)));
+                    apply_to(s, &settings.resolved_for(screen_scope(&screens, s)));
                 }
                 if let Some(s) = screens.get_mut(i)
                     && !s.revealed
