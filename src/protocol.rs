@@ -1,47 +1,57 @@
-//! `xuanji://localhost/...` 自定义协议：从本地 web 目录 serve 页面资源。
+//! `xuanji://localhost/...` 自定义协议：从编入二进制的 web 资源 serve 页面。
 //! 用自定义协议而非 `file://` —— WKWebView 下 `file://` 会因跨域拦掉相对 js。
+//!
+//! 资源经 `rust-embed` 内嵌：release 打进二进制、debug 运行时读源码树（保留热更）。
+//! `settings/node_modules` 排除在外（54M，非运行时所需）。
 
 use std::borrow::Cow;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
+use rust_embed::RustEmbed;
 use wry::http::{Request, Response};
 
-/// 按 URL 路径读取 web 目录下的文件，返回 HTTP 响应。
-/// 越界（`..` 穿越）或缺失一律 404，绝不泄漏 web 目录之外的文件。
-pub fn serve(root: &Path, request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
-    let rel = request.uri().path().trim_start_matches('/');
-    let rel = if rel.is_empty() { "index.html" } else { rel };
+/// web/ 资源集合。folder 相对 `CARGO_MANIFEST_DIR`。
+#[derive(RustEmbed)]
+#[folder = "web/"]
+#[exclude = "settings/node_modules/*"]
+struct Web;
 
-    match resolve(root, rel) {
-        Some(path) => match std::fs::read(&path) {
-            Ok(bytes) => Response::builder()
+/// 按 URL 路径读取内嵌 web 资源，返回 HTTP 响应。
+/// 越界（`..` 穿越）或缺失一律 404，绝不越出 web 目录（debug fs 模式下同样成立）。
+pub fn serve(request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+    let raw = request.uri().path().trim_start_matches('/');
+    let raw = if raw.is_empty() { "index.html" } else { raw };
+
+    match normalize(raw) {
+        Some(rel) => match Web::get(&rel) {
+            Some(file) => Response::builder()
                 .status(200)
-                .header("Content-Type", mime_for(&path))
+                .header("Content-Type", mime_for(&rel))
                 .header("Access-Control-Allow-Origin", "*")
-                .body(Cow::Owned(bytes))
+                .body(file.data)
                 .unwrap_or_else(|_| not_found()),
-            Err(_) => not_found(),
+            None => not_found(),
         },
         None => not_found(),
     }
 }
 
-/// 将相对路径安全解析为 root 内的绝对路径；任何试图逃出 root 的路径返回 None。
-fn resolve(root: &Path, rel: &str) -> Option<PathBuf> {
-    let mut out = root.to_path_buf();
+/// 把 URL 相对路径规范为内嵌 key（正斜杠分隔，无 `..`/绝对段）；任何逃逸段返回 None。
+fn normalize(rel: &str) -> Option<String> {
+    let mut segs = Vec::new();
     for comp in Path::new(rel).components() {
         match comp {
-            Component::Normal(seg) => out.push(seg),
+            Component::Normal(seg) => segs.push(seg.to_str()?),
             // 拒绝绝对路径、`..`、盘符等一切非普通段
             _ => return None,
         }
     }
-    out.starts_with(root).then_some(out)
+    (!segs.is_empty()).then(|| segs.join("/"))
 }
 
 /// 按扩展名给 Content-Type；未知类型退回八位字节流。
-fn mime_for(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
+fn mime_for(rel: &str) -> &'static str {
+    match Path::new(rel).extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
         Some("js") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
@@ -71,19 +81,23 @@ mod tests {
 
     #[test]
     fn rejects_path_traversal() {
-        let root = Path::new("/srv/web");
-        assert!(resolve(root, "../etc/passwd").is_none());
-        assert!(resolve(root, "a/../../etc").is_none());
-        assert!(resolve(root, "/etc/passwd").is_none());
+        assert!(normalize("../etc/passwd").is_none());
+        assert!(normalize("a/../../etc").is_none());
+        assert!(normalize("/etc/passwd").is_none());
+        assert!(normalize("").is_none());
     }
 
     #[test]
-    fn resolves_normal_paths() {
-        let root = Path::new("/srv/web");
-        assert_eq!(resolve(root, "index.html"), Some(root.join("index.html")));
+    fn normalizes_paths() {
+        assert_eq!(normalize("index.html").as_deref(), Some("index.html"));
         assert_eq!(
-            resolve(root, "assets/js/lunar.js"),
-            Some(root.join("assets/js/lunar.js"))
+            normalize("assets/js/lunar.js").as_deref(),
+            Some("assets/js/lunar.js")
         );
+    }
+
+    #[test]
+    fn index_html_is_embedded() {
+        assert!(Web::get("index.html").is_some());
     }
 }

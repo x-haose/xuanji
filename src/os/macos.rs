@@ -6,12 +6,13 @@ use std::ptr::NonNull;
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2::{MainThreadMarker, MainThreadOnly, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSAutoresizingMaskOptions, NSColor, NSEvent,
     NSEventMask, NSScreen, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
     NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowOrderingMode,
 };
+use objc2_foundation::NSString;
 use tao::platform::macos::WindowExtMacOS;
 use tao::window::Window;
 
@@ -134,6 +135,24 @@ pub fn install_mouse_monitor<F: Fn(f64, f64) + 'static>(on_move: F) -> Option<Re
         NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
         &block,
     )
+}
+
+/// 第 `index` 块显示器的 `CGDisplayID`（唯一硬件标识），作每屏配置的稳定键。
+/// 优于显示器名——两块同型号外接屏名字相同、id 各异，才能分别配置。
+/// 取不到（越界/非主线程）返回 None，调用方回落到名字/序号。
+pub fn screen_id(index: usize) -> Option<String> {
+    let mtm = MainThreadMarker::new()?;
+    let screens = NSScreen::screens(mtm);
+    if index >= screens.count() {
+        return None;
+    }
+    let screen = screens.objectAtIndex(index);
+    let desc = screen.deviceDescription();
+    let num = desc.objectForKey(&NSString::from_str("NSScreenNumber"))?;
+    // `NSScreenNumber` 的值是包着 CGDirectDisplayID(u32) 的 NSNumber。
+    // SAFETY: 该键的值在 AppKit 契约中恒为 NSNumber，`unsignedIntValue` 返回其 u32。
+    let display_id: u32 = unsafe { msg_send![&*num, unsignedIntValue] };
+    Some(format!("display-{display_id}"))
 }
 
 /// 把全局屏幕坐标换算成第 `index` 块显示器内的归一化坐标（x 左→右、y 下→上，[0,1]）。

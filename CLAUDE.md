@@ -70,7 +70,7 @@
 - **阶段二 · 功能（设置/配置/参数）**
   - 2.1 设置系统（✅ mac）：`tray-icon` 跨平台托盘（背景子菜单 `CheckMenuItem` 勾选当前项，与设置下拉同源）+ 透明毛玻璃设置窗（另开 wry 窗）+ 迁移 `project.json` 全部参数 + `rfd` 文件/文件夹对话框。
   - 2.2 配置持久化 + IPC 热重载（✅ 一并完成）：`serde_json`→`directories` config dir（overrides-only + 命名预设），改动实时 `applyUserProperties` 下发不重启。
-  - 2.3 每屏独立配置（⏳ 待做）。架构已留扩展位：现为全局单一 overrides，未来加 per-monitor override。
+  - 2.3 每屏独立配置（✅ mac）：`settings.rs` 加 per-screen 覆盖层，`resolved_for(screen)` = 默认 ⊕ 全局 ⊕ 该屏（该屏优先，即便等于 schema 默认也显式存不回落）；`set`/`ipc.Set`/`Pick` 加 `screen` 目标；壳侧屏键取 **CGDisplayID**（`os::screen_id`，回落显示器名/序号——同型号双屏也各异不撞车）；`set_and_broadcast` 按 target 只碰目标屏；设置窗注入屏列表 + 每屏解析值，Svelte 头部「作用范围」选择器（>1 屏才显示）。
 
 - **阶段三 · 跨平台（Windows）**
   - 3.1 Windows 壁纸层：WorkerW（`0x052C`）+ `SetParent` + 24H2 时序防御 + 多屏 + 退出清理。
@@ -78,11 +78,11 @@
   - 3.3 Windows 上跑通设置/特效/音频全链路。
 
 - **阶段四 · 打包发布**
-  - 4.1 资源内嵌：`rust-embed` 把 `web/` 打进二进制（替换现在的 dev 路径读取）。
+  - 4.1 资源内嵌（✅）：`rust-embed` 把 `web/` 嵌入二进制（排除 `settings/node_modules` 54M）；`protocol.rs` 从内嵌资源 serve（保留 `..` 穿越防护），`main.rs` 去掉 `web_dir` 全链路 threading。**debug 仍运行时读源码树（dev 热更不受影响），release 才真嵌入**——故 release 打包前须先 `npm run build` 生成 `web/settings/dist`（gitignored）。
   - 4.2 开机自启、全屏应用暂停省电、自适应帧率（`fps`）。
   - 4.3 安装包：Win MSI/NSIS，mac dmg + 签名公证。
 
-**当前状态**：**阶段一 · 显示 + 阶段二 2.1/2.2 设置系统（mac 侧）完成**。
+**当前状态**：**阶段一 · 显示 + 阶段二（2.1/2.2/2.3）+ 阶段四 4.1 资源内嵌（mac 侧）完成**。
 - M0：`tao 0.35 + wry 0.55.1`（**wry 开 `transparent` feature**，否则透明代码被 gate 掉不编译）起窗，`xuanji://` 协议 serve `web/`（路径穿越防护），注入 `we-shim.js`，原版壁纸逐像素跑起来。
 - M1 mac：`os/macos.rs` 把壁纸 `NSWindow` 沉 `desktop+1` + 全 Space + 点击穿透 + 铺满多屏；`alpha=0`→页面就绪淡入防闪。`XUANJI_DEBUG_TOP=1` 普通置顶调试开关（可截图看壁纸）。
 - 阶段一：四 WebGL2 特效 + 后期处理 + 鼠标交互 + 五行配色 + 星盘时钟 + UI 改造 + 音频律动，均 mac 跑通。
@@ -90,5 +90,7 @@
 - **四特效并入 bgtype**：星汉灿烂/水墨氤氲/雷霆万钧/流光星尘 作为 `bgtype` 选项，与纯色/粒子互斥、可持久化（引擎本就支持 bgtype-as-effect，原版页面零改动）。
 - 关键坑（已解）：① 粒子在 WKWebView 整层不可见——we-shim body 不透明底盖住负 z-index 粒子层，且 **WKWebView 不合成负 z-index 2D canvas**，故底色只给 `html` + 抬粒子/闪电层到非负；② 配置下发须 `{value:}` 包装（WE 契约读 `props[key].value`）；③ 音频参数统一到 5 种律动背景并接进 `fx.js`（原先四特效无视这些参数）。
 - 显示器热插拔（✅）：事件循环轮询排布签名，变化则重建全部壁纸窗（每窗独立兜底淡入）。
-- 门槛：clippy 零告警、fmt 干净、14 测过、svelte-check 零错。
-- **下一步**：阶段二 2.3 每屏独立配置，或阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、阶段一 ⏳ 待深化项（真流体墨/flowfield 速度上色/WebGPU 增量）。开机自启留阶段四（需签名 `.app`）。
+- **每屏独立配置（✅ mac）**：per-screen 覆盖层 + CGDisplayID 稳定屏键 + 作用范围选择器（详见阶段二 2.3）。
+- **资源内嵌（✅）**：rust-embed 嵌入 web/（详见阶段四 4.1）。
+- 门槛：clippy 零告警、fmt 干净、17 测过、svelte-check 零错。
+- **下一步**：阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、阶段一 ⏳ 待深化项（真流体墨/flowfield 速度上色/WebGPU 增量）、开机自启（阶段四，需签名 `.app`）、每屏配置在设置窗打开时热插拔的屏列表刷新（当前仅开窗/切预设时刷新）。

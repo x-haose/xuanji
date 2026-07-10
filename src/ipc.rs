@@ -9,10 +9,20 @@ use serde_json::Value;
 pub enum Msg {
     /// 设置窗加载完，请求注入当前配置。
     Ready,
-    /// 修改一个参数。
-    Set { key: String, value: Value },
-    /// 请求原生文件/目录选择框。
-    Pick { key: String, kind: PickKind },
+    /// 修改一个参数。`screen = None` 改全局；`Some(id)` 只改该屏。
+    Set {
+        key: String,
+        value: Value,
+        #[serde(default)]
+        screen: Option<String>,
+    },
+    /// 请求原生文件/目录选择框。选中结果写入 `screen`（None=全局）。
+    Pick {
+        key: String,
+        kind: PickKind,
+        #[serde(default)]
+        screen: Option<String>,
+    },
     /// 存当前 overrides 为命名预设。
     SavePreset { name: String },
     /// 应用命名预设。

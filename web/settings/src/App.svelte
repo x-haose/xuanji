@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { values, api } from './lib/bridge';
+  import { values, api, screens, scope } from './lib/bridge';
   import { loadSchema, condOk, GROUP_ORDER, type Prop } from './lib/schema';
   import { accentFor } from './lib/color';
   import Presets from './lib/Presets.svelte';
@@ -37,6 +37,17 @@
 <main style="--accent:{accent}">
   <header>
     <h1>璇玑 <span>· 设置</span></h1>
+    {#if $screens.length > 1}
+      <label class="scope">
+        <span>作用范围</span>
+        <select value={$scope} onchange={(e) => api.setScope(e.currentTarget.value)}>
+          <option value="">所有屏幕</option>
+          {#each $screens as s (s.id)}
+            <option value={s.id}>{s.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <Presets />
   </header>
   <div class="body">
@@ -65,3 +76,17 @@
     </section>
   </div>
 </main>
+
+<style>
+  .scope {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  .scope select {
+    min-width: 140px;
+  }
+</style>

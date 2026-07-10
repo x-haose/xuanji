@@ -60,6 +60,21 @@ pub fn install_mouse_monitor(
     }
 }
 
+/// 第 `index` 块显示器的稳定硬件标识（mac 取 `CGDisplayID`，可区分同名同型号屏）。
+/// 非 macOS 或取不到时返回 None，调用方回落到显示器名/序号。见 CLAUDE.md 阶段三：
+/// Windows 侧改用 `EnumDisplayDevices` 的 DeviceID。
+pub fn screen_id(index: usize) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::screen_id(index)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = index;
+        None
+    }
+}
+
 /// 全局坐标 → 第 `index` 屏归一化坐标（[0,1]，光标不在该屏则分量越界）。非 macOS 返回 None。
 pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
     #[cfg(target_os = "macos")]

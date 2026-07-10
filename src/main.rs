@@ -8,7 +8,6 @@ mod protocol;
 mod settings;
 
 use std::error::Error;
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use tao::dpi::LogicalSize;
@@ -54,9 +53,9 @@ fn push_audio(screens: &[Screen], bands: &[f32]) {
     }
 }
 
-/// 把一批属性下发所有壁纸窗（走 WE 契约 applyUserProperties）。
+/// 把一批属性下发单块壁纸窗（走 WE 契约 applyUserProperties）。
 /// WE 契约：页面读 `props[key].value`，故每个标量值包成 `{value: ...}`。
-fn apply_props(screens: &[Screen], props: &serde_json::Map<String, serde_json::Value>) {
+fn apply_to(screen: &Screen, props: &serde_json::Map<String, serde_json::Value>) {
     let wrapped: serde_json::Map<String, serde_json::Value> = props
         .iter()
         .map(|(k, v)| (k.clone(), serde_json::json!({ "value": v })))
@@ -64,39 +63,60 @@ fn apply_props(screens: &[Screen], props: &serde_json::Map<String, serde_json::V
     let json = serde_json::Value::Object(wrapped);
     let js =
         format!("window.__xuanjiApplyUserProperties&&window.__xuanjiApplyUserProperties({json})");
+    let _ = screen.webview.evaluate_script(&js);
+}
+
+/// 给每块屏下发「它自己的」最终配置（各屏按 id 解析 per-screen ⊕ 全局 ⊕ 默认）。
+/// 用于全局性变更（预设/重置/bgtype）——已有专属覆盖的屏保留自身，不被全局值冲掉。
+fn apply_all(screens: &[Screen], settings: &settings::Settings) {
     for s in screens {
-        let _ = s.webview.evaluate_script(&js);
+        apply_to(s, &settings.resolved_for(Some(&s.id)));
     }
 }
 
 /// 改一个参数：校验更新 → 广播壁纸窗 → 落盘 →（设置窗开着则回填该字段）。
-/// 托盘切背景与设置窗改参数共用此路径，保证单一数据源一致。
+/// `target = None` 改全局（下发所有屏，但各屏若有专属覆盖则保留自身）；
+/// `Some(id)` 只改该屏、只下发该屏。托盘切背景与设置窗改参共用此路径，保证单一数据源一致。
 fn set_and_broadcast(
     settings: &mut settings::Settings,
     screens: &[Screen],
     setwv: Option<&WebView>,
     key: &str,
     value: serde_json::Value,
+    target: Option<&str>,
 ) {
-    match settings.set(key, value.clone()) {
+    match settings.set(key, value.clone(), target) {
         Ok(()) => {
-            // 切背景类型须整体重应用（带上粒子等参数触发页面 needReinit 重建）；
-            // 普通改参只下发单键即可。
-            if key == "bgtype" {
-                apply_props(screens, &settings.resolved());
-            } else {
-                let mut one = serde_json::Map::new();
-                one.insert(key.to_string(), value.clone());
-                apply_props(screens, &one);
+            // 切背景类型须整体重应用（带上粒子等参数触发页面 needReinit 重建）；普通改参只下发单键。
+            // 目标屏过滤：target=Some 时只碰该屏；None 时下发每屏「它自己的」解析值。
+            let full = key == "bgtype";
+            for s in screens {
+                if target.is_some_and(|t| t != s.id) {
+                    continue;
+                }
+                let resolved = settings.resolved_for(Some(&s.id));
+                if full {
+                    apply_to(s, &resolved);
+                } else {
+                    let mut one = serde_json::Map::new();
+                    if let Some(v) = resolved.get(key) {
+                        one.insert(key.to_string(), v.clone());
+                    }
+                    apply_to(s, &one);
+                }
             }
             if let Err(e) = settings.save() {
                 eprintln!("[shell] 落盘失败: {e}");
             }
             if let Some(w) = setwv {
                 let _ = w.evaluate_script(&format!(
-                    "window.__xuanjiSetField&&window.__xuanjiSetField({},{})",
+                    "window.__xuanjiSetField&&window.__xuanjiSetField({},{},{})",
                     serde_json::Value::String(key.to_string()),
-                    value
+                    value,
+                    match target {
+                        Some(id) => serde_json::Value::String(id.to_string()),
+                        None => serde_json::Value::Null,
+                    }
                 ));
             }
         }
@@ -104,11 +124,38 @@ fn set_and_broadcast(
     }
 }
 
-/// 把当前配置 + 预设列表注入设置窗（其加载完/切预设后调用）。
-fn init_settings_window(wv: &WebView, settings: &settings::Settings) {
+/// 屏描述列表（去重 id）：喂设置窗的屏幕选择器。
+/// label 用序号「屏幕 N」——id 是 CGDisplayID 数字不宜示人，且同型号屏名字也相同，序号才是唯一可辨的。
+fn screen_descriptors(screens: &[Screen]) -> Vec<serde_json::Value> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for (i, s) in screens.iter().enumerate() {
+        if !seen.insert(s.id.clone()) {
+            continue;
+        }
+        out.push(serde_json::json!({ "id": s.id, "label": format!("屏幕 {}", i + 1) }));
+    }
+    out
+}
+
+/// 把当前配置 + 预设 + 屏列表 + 每屏解析值注入设置窗（其加载完/切预设后调用）。
+fn init_settings_window(wv: &WebView, settings: &settings::Settings, screens: &[Screen]) {
+    let descriptors = screen_descriptors(screens);
+    let screen_values: serde_json::Map<String, serde_json::Value> = descriptors
+        .iter()
+        .filter_map(|d| d.get("id").and_then(|v| v.as_str()))
+        .map(|id| {
+            (
+                id.to_string(),
+                serde_json::Value::Object(settings.resolved_for(Some(id))),
+            )
+        })
+        .collect();
     let payload = serde_json::json!({
         "values": settings.resolved(),
         "presets": settings.presets(),
+        "screens": descriptors,
+        "screenValues": screen_values,
     });
     let _ = wv.evaluate_script(&format!(
         "window.__xuanjiInitSettings&&window.__xuanjiInitSettings({payload})"
@@ -119,7 +166,6 @@ fn init_settings_window(wv: &WebView, settings: &settings::Settings) {
 /// 其 ipc_handler 解析控制消息经 proxy 送回事件循环。
 fn build_settings_window(
     target: &EventLoopWindowTarget<UserEvent>,
-    web_dir: &Path,
     proxy: EventLoopProxy<UserEvent>,
 ) -> Result<(Window, WebView), Box<dyn Error>> {
     let size = LogicalSize::new(980.0, 720.0);
@@ -140,12 +186,9 @@ fn build_settings_window(
     }
     let window = builder.build(target)?;
     os::add_vibrancy(&window);
-    let web_dir = web_dir.to_path_buf();
     let webview = WebViewBuilder::new()
         .with_transparent(true)
-        .with_custom_protocol("xuanji".into(), move |_id, req| {
-            protocol::serve(&web_dir, &req)
-        })
+        .with_custom_protocol("xuanji".into(), move |_id, req| protocol::serve(&req))
         .with_ipc_handler(move |req| {
             if let Some(msg) = ipc::parse(req.body()) {
                 let _ = proxy.send_event(UserEvent::Ipc(msg));
@@ -183,56 +226,57 @@ fn handle_ipc(
     match msg {
         Msg::Ready => {
             if let Some(w) = setwv {
-                init_settings_window(w, settings);
+                init_settings_window(w, settings, screens);
             }
         }
-        Msg::Set { key, value } => {
-            set_and_broadcast(settings, screens, setwv, &key, value);
-            if key == "bgtype" {
+        Msg::Set { key, value, screen } => {
+            set_and_broadcast(settings, screens, setwv, &key, value, screen.as_deref());
+            // 托盘只反映全局 bgtype；某屏专属改动不动托盘勾选。
+            if key == "bgtype" && screen.is_none() {
                 sync_tray_bg(tray, settings);
             }
         }
-        Msg::Pick { key, kind } => {
+        Msg::Pick { key, kind, screen } => {
             let picked = match kind {
                 ipc::PickKind::File => rfd::FileDialog::new().pick_file(),
                 ipc::PickKind::Directory => rfd::FileDialog::new().pick_folder(),
             };
             if let Some(path) = picked {
                 let val = serde_json::Value::String(path.to_string_lossy().into_owned());
-                set_and_broadcast(settings, screens, setwv, &key, val);
+                set_and_broadcast(settings, screens, setwv, &key, val, screen.as_deref());
             }
         }
         Msg::SavePreset { name } => {
             settings.save_preset(&name);
             persist(settings);
             if let Some(w) = setwv {
-                init_settings_window(w, settings);
+                init_settings_window(w, settings, screens);
             }
         }
         Msg::DeletePreset { name } => {
             settings.delete_preset(&name);
             persist(settings);
             if let Some(w) = setwv {
-                init_settings_window(w, settings);
+                init_settings_window(w, settings, screens);
             }
         }
         Msg::ApplyPreset { name } => {
             if settings.apply_preset(&name) {
-                apply_props(screens, &settings.resolved());
+                apply_all(screens, settings);
                 persist(settings);
                 sync_tray_bg(tray, settings);
                 if let Some(w) = setwv {
-                    init_settings_window(w, settings);
+                    init_settings_window(w, settings, screens);
                 }
             }
         }
         Msg::Reset => {
             settings.reset();
-            apply_props(screens, &settings.resolved());
+            apply_all(screens, settings);
             persist(settings);
             sync_tray_bg(tray, settings);
             if let Some(w) = setwv {
-                init_settings_window(w, settings);
+                init_settings_window(w, settings, screens);
             }
         }
     }
@@ -246,6 +290,9 @@ const SCREEN_CHECK: Duration = Duration::from_secs(2);
 
 /// 一块显示器对应的壁纸窗口及其淡入状态。
 struct Screen {
+    /// 稳定屏标识：CGDisplayID（`display-N`）优先，回落显示器名、再回落 `screen-{i}`。
+    /// 作每屏配置的键——CGDisplayID 唯一，两块同型号外接屏也能分别配置。
+    id: String,
     window: Window,
     webview: WebView,
     /// 加载完成后待淡入的时刻；`None` 表示尚未收到加载完成。
@@ -258,7 +305,6 @@ struct Screen {
 /// 为第 `i` 块显示器建一个壁纸窗（沉桌面层、铺满、先透明待页面画好再淡入）。
 fn build_screen(
     target: &EventLoopWindowTarget<UserEvent>,
-    web_dir: &Path,
     url: &str,
     proxy: &EventLoopProxy<UserEvent>,
     i: usize,
@@ -275,15 +321,18 @@ fn build_screen(
             .with_position(m.position())
             .with_inner_size(m.size());
     }
+    // 稳定屏键优先取 CGDisplayID（同名同型号屏也各异）；取不到回落显示器名、再回落序号。
+    let id = os::screen_id(i)
+        .or_else(|| monitor.and_then(|m| m.name()).filter(|n| !n.is_empty()))
+        .unwrap_or_else(|| format!("screen-{i}"));
     let window = builder.build(target)?;
 
-    let web_dir_owned = web_dir.to_path_buf();
     let load_proxy = proxy.clone();
     let webview = WebViewBuilder::new()
         .with_background_color((46, 46, 46, 255))
         .with_ipc_handler(|req| eprintln!("[web] {}", req.body()))
         .with_custom_protocol("xuanji".into(), move |_id, request| {
-            protocol::serve(&web_dir_owned, &request)
+            protocol::serve(&request)
         })
         .with_initialization_script(WE_SHIM)
         .with_on_page_load_handler(move |event, _url| {
@@ -301,6 +350,7 @@ fn build_screen(
     window.set_visible(true);
 
     Ok(Screen {
+        id,
         window,
         webview,
         reveal_at: None,
@@ -326,7 +376,6 @@ fn screens_signature(target: &EventLoopWindowTarget<UserEvent>) -> String {
 /// 按当前显示器重建全部壁纸窗（热插拔/重排后调用）。旧窗随 `clear` 关闭。
 fn rebuild_screens(
     target: &EventLoopWindowTarget<UserEvent>,
-    web_dir: &Path,
     url: &str,
     proxy: &EventLoopProxy<UserEvent>,
     debug_top: bool,
@@ -338,7 +387,7 @@ fn rebuild_screens(
         if all.is_empty() { vec![None] } else { all }
     };
     for (i, monitor) in monitors.iter().enumerate() {
-        match build_screen(target, web_dir, url, proxy, i, monitor.as_ref(), debug_top) {
+        match build_screen(target, url, proxy, i, monitor.as_ref(), debug_top) {
             Ok(s) => screens.push(s),
             Err(e) => eprintln!("[shell] 显示器 {i} 重建失败: {e}"),
         }
@@ -346,9 +395,6 @@ fn rebuild_screens(
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // ponytail: dev 阶段从源码树读 web/；打包时(阶段四)改 rust-embed 嵌入二进制。
-    let web_dir: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web");
-
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     // 壁纸不占 Dock：设为 Accessory（无 Dock 图标、无菜单栏）。
     #[cfg(target_os = "macos")]
@@ -375,15 +421,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy = event_loop.create_proxy();
     let mut screens: Vec<Screen> = Vec::with_capacity(monitors.len());
     for (i, monitor) in monitors.iter().enumerate() {
-        match build_screen(
-            &event_loop,
-            &web_dir,
-            &url,
-            &proxy,
-            i,
-            monitor.as_ref(),
-            debug_top,
-        ) {
+        match build_screen(&event_loop, &url, &proxy, i, monitor.as_ref(), debug_top) {
             Ok(s) => screens.push(s),
             Err(e) => eprintln!("[shell] 显示器 {i} 建窗失败: {e}"),
         }
@@ -427,9 +465,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 });
             }
             Event::UserEvent(UserEvent::PageLoaded(i)) => {
-                // 页面就绪即下发当前配置（壳侧为唯一配置来源）。
+                // 页面就绪即下发该屏配置（壳侧为唯一配置来源，按屏 id 解析）。
                 if let Some(s) = screens.get(i) {
-                    apply_props(std::slice::from_ref(s), &settings.resolved());
+                    apply_to(s, &settings.resolved_for(Some(&s.id)));
                 }
                 if let Some(s) = screens.get_mut(i)
                     && !s.revealed
@@ -449,6 +487,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             setwv,
                             "bgtype",
                             serde_json::Value::String(value.clone()),
+                            None,
                         );
                         if let Some(t) = &tray {
                             t.set_active(&value);
@@ -458,9 +497,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if let Some((w, _)) = &settings_win {
                             os::focus_window(w);
                         } else {
-                            match build_settings_window(target, &web_dir, proxy.clone()) {
+                            match build_settings_window(target, proxy.clone()) {
                                 Ok(pair) => {
-                                    init_settings_window(&pair.1, &settings);
+                                    init_settings_window(&pair.1, &settings, &screens);
                                     os::focus_window(&pair.0);
                                     settings_win = Some(pair);
                                 }
@@ -547,7 +586,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let sig = screens_signature(target);
             if sig != last_screens_sig {
                 last_screens_sig = sig;
-                rebuild_screens(target, &web_dir, &url, &proxy, debug_top, &mut screens);
+                rebuild_screens(target, &url, &proxy, debug_top, &mut screens);
             }
         }
         // 保证按屏检查节拍唤醒（与淡入/音频取更早者）。

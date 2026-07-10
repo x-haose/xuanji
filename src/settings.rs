@@ -21,8 +21,12 @@ struct Prop {
 struct Persisted {
     #[serde(default = "one")]
     version: u32,
+    /// 全局覆盖：适用于所有屏（未被某屏单独覆盖时）。
     #[serde(default)]
     overrides: Map<String, Value>,
+    /// 每屏覆盖：屏 id → 该屏专属覆盖，优先级高于全局。
+    #[serde(default)]
+    screens: BTreeMap<String, Map<String, Value>>,
     #[serde(default)]
     presets: BTreeMap<String, Map<String, Value>>,
 }
@@ -72,20 +76,26 @@ impl Settings {
         }
     }
 
-    /// 默认 ⊕ overrides，供下发壁纸窗与注入设置窗。
-    pub fn resolved(&self) -> Map<String, Value> {
+    /// 某屏的最终配置：默认 ⊕ 全局 overrides ⊕ 该屏 overrides（后者优先）。
+    /// `screen = None` 取全局层（供托盘/无屏上下文用）。
+    pub fn resolved_for(&self, screen: Option<&str>) -> Map<String, Value> {
+        let per = screen.and_then(|s| self.persisted.screens.get(s));
         self.schema
             .iter()
             .map(|(k, p)| {
-                let v = self
-                    .persisted
-                    .overrides
-                    .get(k)
+                let v = per
+                    .and_then(|m| m.get(k))
+                    .or_else(|| self.persisted.overrides.get(k))
                     .cloned()
                     .unwrap_or_else(|| p.default.clone());
                 (k.clone(), v)
             })
             .collect()
+    }
+
+    /// 全局层最终配置（默认 ⊕ 全局 overrides）。
+    pub fn resolved(&self) -> Map<String, Value> {
+        self.resolved_for(None)
     }
 
     /// 已存预设名列表。
@@ -114,8 +124,15 @@ impl Settings {
             .unwrap_or_default()
     }
 
-    /// 校验并写覆盖项；与默认相同则移除以保持 overrides 精简。
-    pub fn set(&mut self, key: &str, value: Value) -> Result<(), SettingsError> {
+    /// 校验并写覆盖项。`screen = None` 写全局层（与默认相同则移除以保持精简）；
+    /// `screen = Some(id)` 写该屏专属层（始终显式存，即便等于默认——用户明确要求此屏用该值，
+    /// 不因等于 schema 默认而回落到全局）。
+    pub fn set(
+        &mut self,
+        key: &str,
+        value: Value,
+        screen: Option<&str>,
+    ) -> Result<(), SettingsError> {
         let prop = self
             .schema
             .get(key)
@@ -126,10 +143,21 @@ impl Settings {
                 kind: prop.kind.clone(),
             });
         }
-        if value == prop.default {
-            self.persisted.overrides.remove(key);
-        } else {
-            self.persisted.overrides.insert(key.into(), value);
+        match screen {
+            None => {
+                if value == prop.default {
+                    self.persisted.overrides.remove(key);
+                } else {
+                    self.persisted.overrides.insert(key.into(), value);
+                }
+            }
+            Some(id) => {
+                self.persisted
+                    .screens
+                    .entry(id.to_string())
+                    .or_default()
+                    .insert(key.into(), value);
+            }
         }
         Ok(())
     }
@@ -166,9 +194,10 @@ impl Settings {
         self.persisted.presets.remove(name);
     }
 
-    /// 清空全部覆盖，恢复默认。
+    /// 清空全部覆盖（全局层 + 每屏层），恢复默认。
     pub fn reset(&mut self) {
         self.persisted.overrides.clear();
+        self.persisted.screens.clear();
     }
 }
 
@@ -238,7 +267,7 @@ mod tests {
     fn set_rejects_unknown_key() {
         let mut s = temp_settings("unknown");
         assert!(matches!(
-            s.set("nope", json!(1)),
+            s.set("nope", json!(1), None),
             Err(SettingsError::UnknownKey(_))
         ));
     }
@@ -247,7 +276,7 @@ mod tests {
     fn set_rejects_type_mismatch() {
         let mut s = temp_settings("mismatch");
         assert!(matches!(
-            s.set("particlecount", json!(true)),
+            s.set("particlecount", json!(true), None),
             Err(SettingsError::TypeMismatch { .. })
         ));
     }
@@ -255,15 +284,15 @@ mod tests {
     #[test]
     fn set_then_resolved_reflects_change() {
         let mut s = temp_settings("change");
-        s.set("particlecount", json!(120)).unwrap();
+        s.set("particlecount", json!(120), None).unwrap();
         assert_eq!(s.resolved().get("particlecount"), Some(&json!(120)));
     }
 
     #[test]
     fn set_to_default_clears_override() {
         let mut s = temp_settings("cleardefault");
-        s.set("particlecount", json!(120)).unwrap();
-        s.set("particlecount", json!(80)).unwrap();
+        s.set("particlecount", json!(120), None).unwrap();
+        s.set("particlecount", json!(80), None).unwrap();
         assert!(!s.persisted.overrides.contains_key("particlecount"));
     }
 
@@ -273,7 +302,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         {
             let mut s = Settings::load(path.clone());
-            s.set("darktheme", Value::Bool(false)).unwrap();
+            s.set("darktheme", Value::Bool(false), None).unwrap();
             s.save_preset("夜间");
             s.save().unwrap();
         }
@@ -285,10 +314,39 @@ mod tests {
     #[test]
     fn preset_apply_swaps_overrides() {
         let mut s = temp_settings("preset");
-        s.set("particlecount", json!(200)).unwrap();
+        s.set("particlecount", json!(200), None).unwrap();
         s.save_preset("满屏");
         s.reset();
         assert!(s.apply_preset("满屏"));
         assert_eq!(s.resolved().get("particlecount"), Some(&json!(200)));
+    }
+
+    #[test]
+    fn per_screen_override_wins_over_global() {
+        let mut s = temp_settings("perscreen");
+        s.set("bgtype", json!("ink"), None).unwrap(); // 全局
+        s.set("bgtype", json!("thunder"), Some("HDMI-1")).unwrap(); // 某屏
+        assert_eq!(s.resolved_for(None).get("bgtype"), Some(&json!("ink")));
+        assert_eq!(
+            s.resolved_for(Some("HDMI-1")).get("bgtype"),
+            Some(&json!("thunder"))
+        );
+        // 未覆盖的屏回落到全局。
+        assert_eq!(
+            s.resolved_for(Some("other")).get("bgtype"),
+            Some(&json!("ink"))
+        );
+    }
+
+    #[test]
+    fn per_screen_keeps_value_equal_to_default() {
+        let mut s = temp_settings("perscreendefault");
+        s.set("bgtype", json!("ink"), None).unwrap(); // 全局改
+        s.set("bgtype", json!("color"), Some("A")).unwrap(); // 该屏钉回默认值
+        // 即便等于 schema 默认，也不回落到全局 ink。
+        assert_eq!(
+            s.resolved_for(Some("A")).get("bgtype"),
+            Some(&json!("color"))
+        );
     }
 }
