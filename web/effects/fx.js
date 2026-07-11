@@ -789,6 +789,10 @@
       begin: function () {
         gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fbo);
         gl.viewport(0, 0, scene.w, scene.h);
+        // 每帧从干净场景开始：浏览器的自动清只清默认帧缓冲、不清离屏 FBO，
+        // 不显式清会让不完全覆盖的特效（starfield/thunder）残留成拖尾。
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
       },
       end: function (t) {
         gl.disable(gl.BLEND);
