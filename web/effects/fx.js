@@ -154,6 +154,20 @@
       return [this.X_UV, (1 - huv) / 2, wuv, huv];
     },
   };
+  /// 1×1 透明占位纹理：seal 未就绪时给采样单元兜底一张完整纹理（防 ANGLE-Metal 1282）。
+  var _dummyTex = null;
+  function dummyTex(gl) {
+    if (_dummyTex) return _dummyTex;
+    _dummyTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, _dummyTex);
+    var px = new Uint8Array([0, 0, 0, 0]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return _dummyTex;
+  }
+
   var sealImg = new Image();
   sealImg.onload = function () {
     seal.aspect = sealImg.naturalWidth / sealImg.naturalHeight;
@@ -664,13 +678,16 @@
       var s = window.XuanjiFx.seal;
       var on = s.ready && s.show ? 1 : 0;
       gl.uniform1f(gl.getUniformLocation(prog, 'u_sealOn'), on);
+      // 采样单元必须始终绑一张「完整纹理」：sampler2D 指向不完整纹理时，WKWebView/ANGLE-Metal
+      // 在 draw 时报 INVALID_OPERATION(1282)——完整性是静态校验，即便采样在未走的分支里也算。
+      // 故 seal 未上传/关闭时也绑 1×1 占位纹理（flowfield 在顶点+TF 采样，是最严格必炸路径）。
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, s.tex || dummyTex(gl));
+      gl.uniform1i(gl.getUniformLocation(prog, 'u_seal'), unit);
+      gl.activeTexture(gl.TEXTURE0);
       if (!on) return;
       var r = s.rect(w, h);
       gl.uniform4f(gl.getUniformLocation(prog, 'u_sealRect'), r[0], r[1], r[2], r[3]);
-      gl.activeTexture(gl.TEXTURE0 + unit);
-      gl.bindTexture(gl.TEXTURE_2D, s.tex);
-      gl.uniform1i(gl.getUniformLocation(prog, 'u_seal'), unit);
-      gl.activeTexture(gl.TEXTURE0);
     },
     /// 编译链接一个着色器程序；失败抛错并附日志。
     program: function (gl, vsSrc, fsSrc) {
