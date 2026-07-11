@@ -15,11 +15,11 @@ use tao::platform::windows::WindowExtWindows;
 use tao::window::Window;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, HWND_BOTTOM, LWA_ALPHA,
-    SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-    SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TRANSPARENT,
+    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, HWND_BOTTOM,
+    LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -57,14 +57,70 @@ unsafe extern "system" fn enum_cb(top: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1) // 继续
 }
 
-fn find_worker_w() -> Option<HWND> {
+/// 经典结构（≤23H2）：顶层 WorkerW —— `SHELLDLL_DefView` 宿主的下一个兄弟。
+fn find_worker_classic() -> Option<HWND> {
     let mut found: isize = 0;
     let _ = unsafe { EnumWindows(Some(enum_cb), LPARAM(&mut found as *mut isize as isize)) };
     (found != 0).then_some(HWND(found as *mut c_void))
 }
 
+/// 多策略找 WorkerW：先看 Progman 的直接子窗（24H2 常把 WorkerW 挂在 Progman 下），
+/// 再退回经典的顶层兄弟结构。
+fn find_worker_w(progman: HWND) -> Option<HWND> {
+    let child = unsafe { FindWindowExW(Some(progman), None, w!("WorkerW"), PCWSTR::null()) };
+    if let Ok(worker) = child
+        && !worker.is_invalid()
+    {
+        eprintln!("[win] WorkerW 在 Progman 下（24H2 式）");
+        return Some(worker);
+    }
+    if let Some(worker) = find_worker_classic() {
+        eprintln!("[win] WorkerW 为顶层兄弟（经典式）");
+        return Some(worker);
+    }
+    None
+}
+
+/// 取窗口类名（诊断用）。
+fn class_of(hwnd: HWND) -> String {
+    let mut buf = [0u16; 256];
+    let n = unsafe { GetClassNameW(hwnd, &mut buf) };
+    String::from_utf16_lossy(&buf[..n.max(0) as usize])
+}
+
+/// 找不到 WorkerW 时打印实际窗口结构，供远程诊断 Windows 版本差异。
+fn diagnose(progman: HWND) {
+    eprintln!("[win][诊断] Progman 直接子窗：");
+    let mut prev: Option<HWND> = None;
+    loop {
+        let next = unsafe { FindWindowExW(Some(progman), prev, PCWSTR::null(), PCWSTR::null()) };
+        match next {
+            Ok(c) if !c.is_invalid() => {
+                eprintln!("[win][诊断]   {} ({})", class_of(c), c.0 as isize);
+                prev = Some(c);
+            }
+            _ => break,
+        }
+    }
+    eprintln!("[win][诊断] 顶层 WorkerW（及是否含 SHELLDLL_DefView）：");
+    let _ = unsafe { EnumWindows(Some(diag_cb), LPARAM(0)) };
+}
+
+unsafe extern "system" fn diag_cb(top: HWND, _: LPARAM) -> BOOL {
+    if class_of(top) == "WorkerW" {
+        let shell =
+            unsafe { FindWindowExW(Some(top), None, w!("SHELLDLL_DefView"), PCWSTR::null()) };
+        let has_shell = shell.map(|h| !h.is_invalid()).unwrap_or(false);
+        eprintln!(
+            "[win][诊断]   WorkerW {} 含 SHELLDLL_DefView={}",
+            top.0 as isize, has_shell
+        );
+    }
+    BOOL(1)
+}
+
 /// 确保 `WorkerW` 存在并返回其句柄：缓存命中直接返回；否则给 Progman 发 spawn 消息
-/// 并轮询等待（应对 24H2 延迟就绪）。
+/// 并轮询等待（应对 24H2 延迟就绪 / 结构差异）。
 fn ensure_worker_w() -> Option<HWND> {
     let cached = WORKER_W.get();
     if cached != 0 {
@@ -88,14 +144,15 @@ fn ensure_worker_w() -> Option<HWND> {
                 Some(&mut res),
             );
         }
-        if let Some(worker) = find_worker_w() {
+        if let Some(worker) = find_worker_w(progman) {
             WORKER_W.set(worker.0 as isize);
             eprintln!("[win] WorkerW 就绪（第 {} 次尝试）", attempt + 1);
             return Some(worker);
         }
         std::thread::sleep(WORKER_W_INTERVAL);
     }
-    eprintln!("[win] {WORKER_W_TRIES} 次重试后仍未找到 WorkerW，壁纸可能不显示");
+    eprintln!("[win] {WORKER_W_TRIES} 次重试后仍未找到 WorkerW；打印窗口结构诊断：");
+    diagnose(progman);
     None
 }
 
