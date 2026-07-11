@@ -73,7 +73,7 @@
   - 2.3 每屏独立配置（✅ mac）：`settings.rs` 加 per-screen 覆盖层，`resolved_for(screen)` = 默认 ⊕ 全局 ⊕ 该屏（该屏优先，即便等于 schema 默认也显式存不回落）。壳侧屏键取 **CGDisplayID**（`os::screen_id`，回落显示器名/序号——同型号双屏也各异不撞车）；设置窗注入屏列表 + 每屏解析值，Svelte 头部「作用范围」选择器（>1 屏才显示），`ipc.Set`/`Pick` 带 `screen` 目标。两条关键语义（皆为踩坑后定）：① **`screen_scope`：per-screen 仅多屏生效**，单屏一律走全局——否则多屏设过、拔屏变单屏的遗留覆盖会静默劫持画面且单屏 UI 无入口解除；② **`set(…, None)` = 所有屏统一**（托盘天生全局唯一，「所有屏」操作清掉各屏对该键的专属覆盖 + 设全局），只有显式选某屏才写专属——杜绝「所有屏」切不动有覆盖的屏。
 
 - **阶段三 · 跨平台（Windows）**
-  - 3.1 Windows 壁纸层（⏳ 代码完成，待真机实测）：`os/windows.rs` —— 给 Progman 发 `0x052C`（发多次+轮询等 WorkerW 出现，防 24H2 延迟就绪）→ `EnumWindows` 找 `SHELLDLL_DefView` 兄弟 `WorkerW` → 壁纸窗设 `WS_CHILD` + `WS_EX_TOOLWINDOW|NOACTIVATE|TRANSPARENT|LAYERED`（隐任务栏/不抢焦/点击穿透/可淡入）→ `SetParent` 挂上 → 按原屏坐标 `SetWindowPos` 铺满（-1/+2 补 WebView2 描边）；`set_alpha` 走 `SetLayeredWindowAttributes` 淡入；退出 `LoopDestroyed` 时逐窗 `SetParent(NULL)`+隐藏 + `SPI_SETDESKWALLPAPER` 刷新桌面清残影。**mac 交叉编译 `cargo check --target x86_64-pc-windows-msvc` + clippy 零告警通过；真机 WorkerW 时序 / 多屏坐标 / 穿透待实测。** ⏳ 未做：DWM 崩溃后自动重建、鼠标交互（`install_mouse_monitor` win 仍 None，特效自动跑无光标响应）、`screen_id`（win 仍 None，per-screen 键回落显示器名/序号）、设置窗毛玻璃（win `add_vibrancy` no-op）。
+  - 3.1 Windows 壁纸层（✅ Parallels ARM64 Win11 24H2 实测通过）：`os/windows.rs` —— 给 Progman 发 `0x052C`（发多次+轮询等 WorkerW 出现）→ **多策略找 WorkerW**：先查 Progman 直接子窗（**24H2 实测就是这种**，经典的顶层 `SHELLDLL_DefView` 兄弟已失效），再退回经典，都失败打印窗口结构诊断 → 壁纸窗设 `WS_CHILD` + `WS_EX_TOOLWINDOW|NOACTIVATE|TRANSPARENT|LAYERED`（隐任务栏/不抢焦/点击穿透/可淡入）→ `SetParent` 挂上 → 按原屏坐标 `SetWindowPos` 铺满（-1/+2 补 WebView2 描边）；`set_alpha` 走 `SetLayeredWindowAttributes` 淡入；退出 `LoopDestroyed` 逐窗 `SetParent(NULL)`+隐藏 + `SPI_SETDESKWALLPAPER` 刷新清残影。**两处 WebView2 兼容坑（实测踩出）**：① wry 在 Win 把自定义协议映射为 `http://xuanji.localhost/`（非 mac 的 `xuanji://localhost/`），页面内 `fetch` 不能硬编码 scheme——设置窗 `schema.ts` 改相对 origin 的 `/project.json`；② WebView2 在 `document_start` 注入脚本时 DOM 尚空（WKWebView 那时已就绪），`we-shim` 防闪底色 `appendChild` 抛错会中断整个 shim（连带 `__xuanjiApplyUserProperties` 不定义→托盘切背景失效）——改为 DOM 未就绪时延迟到 `DOMContentLoaded`。**mac 交叉编译 check + clippy 零告警。** ⏳ 未做：多屏坐标（单屏已验，多屏 SetParent 后坐标待测）、退出残影待确认、DWM 崩溃后自动重建、鼠标交互（`install_mouse_monitor` win 仍 None，特效自动跑无光标响应）、`screen_id`（win 仍 None，per-screen 键回落显示器名/序号）、设置窗毛玻璃（win `add_vibrancy` no-op，Mica/Acrylic 待做）。
   - 3.2 Windows 音频：`cpal` WASAPI loopback 验证。
   - 3.3 Windows 上跑通设置/特效/音频全链路。
 
@@ -82,7 +82,7 @@
   - 4.2 开机自启、全屏应用暂停省电、自适应帧率（`fps`）。
   - 4.3 安装包：Win MSI/NSIS，mac dmg + 签名公证。
 
-**当前状态**：**阶段一 · 显示 + 阶段二（2.1/2.2/2.3）+ 阶段四 4.1 资源内嵌（mac 侧）完成**。
+**当前状态**：**阶段一 · 显示 + 阶段二（2.1/2.2/2.3）+ 阶段四 4.1 资源内嵌（mac 侧）+ 阶段三 3.1 Windows 壁纸层（Parallels ARM64 Win11 24H2 真机通过）完成**。
 - M0：`tao 0.35 + wry 0.55.1`（**wry 开 `transparent` feature**，否则透明代码被 gate 掉不编译）起窗，`xuanji://` 协议 serve `web/`（路径穿越防护），注入 `we-shim.js`，原版壁纸逐像素跑起来。
 - M1 mac：`os/macos.rs` 把壁纸 `NSWindow` 沉 `desktop+1` + 全 Space + 点击穿透 + 铺满多屏；`alpha=0`→页面就绪淡入防闪。`XUANJI_DEBUG_TOP=1` 普通置顶调试开关（可截图看壁纸）。
 - 阶段一：四 WebGL2 特效 + 后期处理 + 鼠标交互 + 五行配色 + 星盘时钟 + UI 改造 + 音频律动，均 mac 跑通。
@@ -93,4 +93,4 @@
 - **每屏独立配置（✅ mac）**：per-screen 覆盖层 + CGDisplayID 稳定屏键 + 作用范围选择器（详见阶段二 2.3）。
 - **资源内嵌（✅）**：rust-embed 嵌入 web/（详见阶段四 4.1）。
 - 门槛：clippy 零告警、fmt 干净、17 测过、svelte-check 零错。
-- **下一步**：阶段三 Windows 壁纸层（WorkerW）。⏳ 遗留：Win WASAPI 音频验证、开机自启（阶段四，需签名 `.app`）、每屏配置在设置窗打开时热插拔的屏列表刷新（当前仅开窗/切预设时刷新）。
+- **下一步**：阶段三 3.2 Windows 音频（`cpal` WASAPI loopback 验证）+ 3.3 全链路，或 Windows 观感打磨（设置窗 Mica/Acrylic 玻璃、鼠标交互、多屏坐标实测）。⏳ 遗留：开机自启（阶段四，需签名）、每屏配置在设置窗打开时热插拔的屏列表刷新（当前仅开窗/切预设时刷新）。
