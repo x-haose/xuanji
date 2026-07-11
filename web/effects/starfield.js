@@ -181,6 +181,10 @@
         px = h / 900;
       },
       frame: function (t) {
+        // 每帧清 scene：nebula 未铺满 + 星点加色叠加，不清会累积成放射拖尾
+        // （thunder/flowfield/ink 各自全屏覆盖 scene，无需此步）。
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
         var aspect = w / h;
         // 视差：星层随光标反向微移（跟随平滑坐标，停手保持不回弹）。
         var mo = window.XuanjiFx.mouse;
