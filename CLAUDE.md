@@ -63,7 +63,8 @@
     - **特效切换**（阶段二已正式化）：`XuanjiFx.select(name)`=`forced` 覆盖，现仅 `?fx=` 预览用；正式切换已并入 `bgtype`（托盘背景子菜单 / 设置下拉，走 `set_and_broadcast`→持久化）。⌃⌥→ 循环快捷键 + mac 全局键监听已移除（都是背景了，单给特效循环别扭）。`XUANJI_FX=<name>` 仍可 URL 强制预览。
     - **星盘时钟**：`enhanceClock` 给原表盘加性注入浑天仪叠层（同心环 + 二十八宿刻度 + 黄道/赤道斜环 + 十二地支）。地支按 **12 小时表盘上下午分组**（上午子—巳、下午午—亥，6 位置每 60°）落在时针对应钟点，`updateShichen` 按真实时间填充并高亮当前时辰；原阿拉伯数字/紫色读数经 JS 内联样式改掉；时钟块 `--clock-size:230`。
     - **UI 改造**（全部 fx-active 门控、JS 注入、stop 还原；开发用 `python3 -m http.server` + headless Chrome 截图迭代，非盲调）：`enhanceBazi` 八字命盘大四柱（年月日时，干上支下，五行色）；`enhanceProgress` 本日进度发光圆环；`enhanceSihua` 四化彩色药丸（禄绿/权紫/科蓝/忌红 + 小标）；`enhanceBento` 宜忌拉成通栏页脚、内容排成两列网格；玻璃卡片分层阴影 + 顶部内高光边；卡片随光标 3D 微倾斜(`tiltCards`)。
-    - 特效打磨均已完成：flowfield 速度上色（`RENDER_VS` 按粒子位置重算 curl 得漂移速率，急流亮白染五行 accent / 缓流暗靛沉，不改 buffer）、真流体墨（`ink.js` 半拉格朗日平流）、bento 通栏页脚。WebGPU 增量评估后搁置（见「由来与核心决策」）。
+    - ⏳ 待深化：flowfield 速度上色（`RENDER_VS` 重算 curl 得速率上色，浏览器 OK 但 **WKWebView 触发 GL_INVALID_OPERATION(1282)** 已回退，需换不触发该错误的实现——如把速率存进 transform feedback 而非 render 时重算）。（真流体墨、bento 已完成；WebGPU 评估后搁置——见「由来与核心决策」。）
+    - **特效架构要点（踩坑记）**：四特效渲到后期处理的离屏 scene FBO（bloom/颗粒/暗角/色散再合成）。浏览器对默认帧缓冲每帧自动清、但**离屏 FBO 不自动清**——不完全铺满的 starfield（nebula 未满 + 星点加色叠加）必须自己每帧 `gl.clear` scene，否则累积成放射拖尾；thunder（全屏 shader 覆盖）/flowfield（trail FBO blit）/ink（ping-pong blit）各自全屏覆盖 scene，无需清、也不可在 post 层一刀切清（会误伤）。thunder 暗态（暗云+偶发闪电）是设计非 bug。
   - 1.3 音频律动（✅ mac）：`audio.rs` 用 `cpal` 对默认输出设备 `build_input_stream`（自动 Core Audio process tap，无需授权、不弹框）→ `rustfft` 128 段对数分桶 → 事件循环每 33ms `evaluate_script` 下发。`we-shim.js` 的 `__xuanjiPushAudio` 同时喂 WE 回调与 `XuanjiFx.setAudio`（分 bass/mid/treble，attack 0.6/decay 0.2 平滑）。四特效各自律动：starfield 鼓点胀星+星云明灭、ink 音量涌墨、flowfield 鼓点加速冲刺+提亮、thunder 重拍云海轻闪+额外闪电（阈值门控防泛白）。⏳ Win WASAPI 待阶段三验证。
   - 1.4 视觉打磨：整体观感、过渡、默认配色，锁定「明显超过原版」。
 
