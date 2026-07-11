@@ -55,7 +55,8 @@ interface RawProp {
 }
 
 export async function loadSchema(): Promise<Prop[]> {
-  const res = await fetch('xuanji://localhost/project.json');
+  // 相对当前 origin 根，兼容两平台的协议映射（mac: xuanji://localhost，win: http://xuanji.localhost）。
+  const res = await fetch('/project.json');
   const json = (await res.json()) as { general: { properties: Record<string, RawProp> } };
   const props = json.general.properties;
   return Object.entries(props)

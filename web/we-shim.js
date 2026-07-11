@@ -38,7 +38,17 @@
   var base = document.createElement('style');
   base.textContent =
     'html{background:#2e2e2e}#particles-js{z-index:0!important}#lightning-canvas{z-index:1!important}';
-  (document.head || document.documentElement).appendChild(base);
+  var mount = document.head || document.documentElement;
+  if (mount) {
+    mount.appendChild(base);
+  } else {
+    // WebView2 在 document_start 注入时 DOM 尚空（WKWebView 那时已就绪）——直接 append 会
+    // 抛错中断整个 shim（连带 __xuanjiApplyUserProperties 等全局都不定义，托盘切背景失效）。
+    // 故 DOM 未就绪时延迟到就绪再注入，绝不阻断后续全局定义。
+    document.addEventListener('DOMContentLoaded', function () {
+      (document.head || document.documentElement).appendChild(base);
+    });
+  }
 
   /// 页面通过它注册 128 段 FFT 回调（WE→页面 提供的 API）。
   window.wallpaperRegisterAudioListener = function (cb) {
