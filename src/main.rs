@@ -171,6 +171,44 @@ fn init_settings_window(wv: &WebView, settings: &settings::Settings, screens: &[
 
 /// 建一个普通（可见/有边框/正常层级/响应鼠标）设置窗，加载 Svelte 产物。
 /// 其 ipc_handler 解析控制消息经 proxy 送回事件循环。
+/// 程序化生成 64×64 北斗七星窗口图标（璇玑玉衡=北斗，最贴主题；免图标资源与图片解码依赖）。
+/// 深蓝底 + 七枚青色高斯亮点排成斗形。取不到（尺寸非法）返回 None，退回系统默认。
+fn app_icon() -> Option<tao::window::Icon> {
+    const S: usize = 64;
+    let mut rgba = vec![0u8; S * S * 4];
+    for px in rgba.chunks_exact_mut(4) {
+        px.copy_from_slice(&[24, 26, 40, 255]);
+    }
+    // 北斗七星归一化坐标（斗形），亮点染青 accent。
+    let stars = [
+        (0.20, 0.28),
+        (0.20, 0.50),
+        (0.37, 0.56),
+        (0.44, 0.42),
+        (0.60, 0.44),
+        (0.76, 0.40),
+        (0.90, 0.30),
+    ];
+    for &(sx, sy) in &stars {
+        let (cx, cy) = (sx * S as f64, sy * S as f64);
+        for y in 0..S {
+            for x in 0..S {
+                let (dx, dy) = (x as f64 - cx, y as f64 - cy);
+                let g = (-(dx * dx + dy * dy) / 6.0).exp(); // 高斯亮点
+                if g <= 0.01 {
+                    continue;
+                }
+                let i = (y * S + x) * 4;
+                let mix = |c: u8, t: u8| (c as f64 + (t as f64 - c as f64) * g).min(255.0) as u8;
+                rgba[i] = mix(rgba[i], 120);
+                rgba[i + 1] = mix(rgba[i + 1], 230);
+                rgba[i + 2] = mix(rgba[i + 2], 220);
+            }
+        }
+    }
+    tao::window::Icon::from_rgba(rgba, S as u32, S as u32).ok()
+}
+
 fn build_settings_window(
     target: &EventLoopWindowTarget<UserEvent>,
     proxy: EventLoopProxy<UserEvent>,
@@ -179,6 +217,7 @@ fn build_settings_window(
     let mut builder = WindowBuilder::new()
         .with_title("璇玑 · 设置")
         .with_inner_size(size)
+        .with_window_icon(app_icon())
         .with_transparent(true);
     // 居中到主屏（否则多屏时可能落在别的屏上「点了没看见」）。
     if let Some(mon) = target.primary_monitor() {

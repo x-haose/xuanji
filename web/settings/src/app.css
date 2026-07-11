@@ -166,6 +166,13 @@ select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* 展开的原生下拉弹层：Chromium/WebView2 把 option 合成在系统白底上，半透明 surface
+   会洗白成浅字白底看不清——给 option 一个不透明深色底 + 浅字。mac WKWebView 用原生
+   深色菜单、忽略这些 CSS，无副作用。 */
+option {
+  background: var(--bg);
+  color: var(--text);
+}
 
 /* color */
 input[type='color'] {
