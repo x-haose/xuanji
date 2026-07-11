@@ -34,11 +34,13 @@ pub fn refresh_desktop() {
     windows::refresh_desktop();
 }
 
-/// 给透明窗口加 macOS 毛玻璃背衬（`NSVisualEffectView`）。非 macOS 暂为 no-op。
+/// 给透明窗口加毛玻璃背衬（mac=`NSVisualEffectView`，Windows=DWM Acrylic）。其它平台 no-op。
 pub fn add_vibrancy(window: &tao::window::Window) {
     #[cfg(target_os = "macos")]
     macos::add_vibrancy(window);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    windows::add_vibrancy(window);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = window;
 }
 
@@ -66,15 +68,20 @@ pub fn set_alpha(window: &tao::window::Window, alpha: f64) {
     let _ = (window, alpha);
 }
 
-/// 安装全局鼠标监视器；返回的句柄需存活以保持监听。非 macOS 暂为 no-op（返回 None）。
+/// 安装全局鼠标监视器；返回的句柄需存活以保持监听（mac=NSEvent 监视器，Windows=轮询线程
+/// guard）。其它平台 no-op（返回 None）。`Send` 界限为 Windows 轮询线程所需。
 pub fn install_mouse_monitor(
-    on_move: impl Fn(f64, f64) + 'static,
+    on_move: impl Fn(f64, f64) + Send + 'static,
 ) -> Option<Box<dyn std::any::Any>> {
     #[cfg(target_os = "macos")]
     {
         macos::install_mouse_monitor(on_move).map(|t| Box::new(t) as Box<dyn std::any::Any>)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::install_mouse_monitor(on_move).map(|g| Box::new(g) as Box<dyn std::any::Any>)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = on_move;
         None
@@ -102,7 +109,11 @@ pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
     {
         macos::screen_norm(x, y, index)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::screen_norm(x, y, index)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (x, y, index);
         None

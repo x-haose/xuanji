@@ -9,17 +9,24 @@
 
 use std::cell::Cell;
 use std::ffi::c_void;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tao::platform::windows::WindowExtWindows;
 use tao::window::Window;
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DWM_SYSTEMBACKDROP_TYPE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+    DwmSetWindowAttribute,
+};
+use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, HWND_BOTTOM,
-    LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
+    HWND_BOTTOM, LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -212,4 +219,87 @@ pub fn detach_from_desktop(window: &Window) {
 /// 刷新桌面壁纸，清掉 WorkerW 残影（退出清理最后一步）。
 pub fn refresh_desktop() {
     let _ = unsafe { SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, None, SPIF_UPDATEINIFILE) };
+}
+
+/// 鼠标轮询线程的存活标志；此 guard 落时置 false 让线程退出。
+pub struct MouseGuard(Arc<AtomicBool>);
+impl Drop for MouseGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+/// 全局鼠标监视：壁纸窗点击穿透收不到鼠标事件，故起后台线程按 ~60Hz 轮询 `GetCursorPos`
+/// （虚拟屏坐标，多屏可为负）。无钩子、无授权、不破穿透——对应 mac 的 NSEvent 全局监视器。
+pub fn install_mouse_monitor<F: Fn(f64, f64) + Send + 'static>(on_move: F) -> Option<MouseGuard> {
+    let alive = Arc::new(AtomicBool::new(true));
+    let flag = alive.clone();
+    std::thread::spawn(move || {
+        let mut last = (i32::MIN, i32::MIN);
+        while flag.load(Ordering::Relaxed) {
+            let mut p = POINT::default();
+            // SAFETY: p 是有效可写 POINT；GetCursorPos 仅写入它。
+            if unsafe { GetCursorPos(&mut p) }.is_ok() && (p.x, p.y) != last {
+                last = (p.x, p.y);
+                on_move(p.x as f64, p.y as f64);
+            }
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    });
+    Some(MouseGuard(alive))
+}
+
+unsafe extern "system" fn collect_monitor(
+    _h: HMONITOR,
+    _dc: HDC,
+    rc: *mut RECT,
+    lp: LPARAM,
+) -> BOOL {
+    // SAFETY: lp 由 enum_monitors 传入，指向该栈上的 Vec<RECT>；rc 指向本块显示器 rcMonitor。
+    let out = unsafe { &mut *(lp.0 as *mut Vec<RECT>) };
+    out.push(unsafe { *rc });
+    true.into()
+}
+
+/// 枚举所有显示器的虚拟屏矩形（顺序对应 tao `available_monitors`——单屏必对；
+/// ponytail: 多屏顺序待真机核，若与 tao 不一致改按 position 匹配）。
+fn enum_monitors() -> Vec<RECT> {
+    let mut out: Vec<RECT> = Vec::new();
+    // SAFETY: 回调把每块 rcMonitor 收进 out，经 lparam 传其可变引用；调用期间 out 存活。
+    unsafe {
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect_monitor),
+            LPARAM(&mut out as *mut _ as isize),
+        );
+    }
+    out
+}
+
+/// 全局虚拟屏坐标 → 第 `index` 屏归一化坐标（x 左→右、y 下→上，与 mac 约定一致，
+/// 故鼠标特效在两平台上下不颠倒）。光标不在该屏时分量越界，调用方据此判断。
+pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
+    let r = *enum_monitors().get(index)?;
+    let w = (r.right - r.left) as f64;
+    let h = (r.bottom - r.top) as f64;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    Some(((x - r.left as f64) / w, (r.bottom as f64 - y) / h))
+}
+
+/// 给透明设置窗加 DWM 系统背景（Win11 Acrylic 毛玻璃）。Win10 无此属性，调用被忽略、
+/// 退化为普通透明窗——对应 mac 的 `NSVisualEffectView`。
+pub fn add_vibrancy(window: &Window) {
+    let backdrop = DWMSBT_TRANSIENTWINDOW;
+    // SAFETY: hwnd 有效；pvAttribute 指向一个 DWM_SYSTEMBACKDROP_TYPE，长度按其大小传。
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd_of(window),
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &backdrop as *const _ as *const c_void,
+            std::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
+        );
+    }
 }
