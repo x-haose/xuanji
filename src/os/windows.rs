@@ -18,9 +18,10 @@ use tao::window::Window;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWM_SYSTEMBACKDROP_TYPE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
-    DwmSetWindowAttribute,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
     HWND_BOTTOM, LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE,
@@ -292,11 +293,21 @@ pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
 /// 给透明设置窗加 DWM 系统背景（Win11 Acrylic 毛玻璃）。Win10 无此属性，调用被忽略、
 /// 退化为普通透明窗——对应 mac 的 `NSVisualEffectView`。
 pub fn add_vibrancy(window: &Window) {
+    let hwnd = hwnd_of(window);
     let backdrop = DWMSBT_TRANSIENTWINDOW;
-    // SAFETY: hwnd 有效；pvAttribute 指向一个 DWM_SYSTEMBACKDROP_TYPE，长度按其大小传。
+    // margins 全 -1 = 把玻璃薄片延展进整个客户区。缺这步则系统背景材质只在非客户区合成，
+    // 客户区仍是默认不透明底、材质透不出来（Acrylic 看不见的主因）。
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+    // SAFETY: hwnd 有效；pvAttribute/pMarInset 指向本栈上有效值，长度按类型大小传。
     unsafe {
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
         let _ = DwmSetWindowAttribute(
-            hwnd_of(window),
+            hwnd,
             DWMWA_SYSTEMBACKDROP_TYPE,
             &backdrop as *const _ as *const c_void,
             std::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
