@@ -1,9 +1,10 @@
-//! 系统声音律动：对默认输出设备开 `build_input_stream`，cpal 自动建 Core Audio
-//! process tap 聚合设备做 loopback（macOS 14.2+）；采样经 rustfft 出 128 段频谱。
+//! 系统声音律动：对默认输出设备开 `build_input_stream` 做 loopback（mac 走 Core Audio
+//! process tap 聚合设备，macOS 14.2+；Win 走 WASAPI loopback），采样经 rustfft 出 128 段频谱。
 
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, SizedSample};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
 const FFT_SIZE: usize = 1024;
@@ -19,7 +20,43 @@ pub struct Audio {
     smooth: Mutex<[f32; BANDS]>, // 平滑(起快落慢)，视觉不抖
 }
 
-/// 启动系统声音捕获；失败（无设备/权限/旧系统）返回 None，律动静默降级。
+/// 按采样类型 `T` 建 loopback 输入流，回调把多声道下混成单声道 f32 存进 `sink`。
+/// 输出设备混音格式跨平台各异（mac 多 F32、Win WASAPI 可能 I16/U16），统一转 f32。
+fn build_stream<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    sink: Arc<Mutex<Vec<f32>>>,
+    channels: usize,
+) -> Result<cpal::Stream, cpal::Error>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
+    device.build_input_stream(
+        config,
+        move |data: &[T], _: &cpal::InputCallbackInfo| {
+            if let Ok(mut buf) = sink.lock() {
+                let mut i = 0;
+                while i + channels <= data.len() {
+                    let mut m = 0.0f32;
+                    for c in 0..channels {
+                        m += f32::from_sample_(data[i + c]);
+                    }
+                    buf.push(m / channels as f32);
+                    i += channels;
+                }
+                let len = buf.len();
+                if len > FFT_SIZE {
+                    buf.drain(0..len - FFT_SIZE);
+                }
+            }
+        },
+        |err| eprintln!("[audio] 流错误: {err}"),
+        None,
+    )
+}
+
+/// 启动系统声音捕获；失败（无设备/权限/旧系统/不支持格式）返回 None，律动静默降级。
 pub fn start() -> Option<Audio> {
     let host = cpal::default_host();
     let device = host.default_output_device()?; // 输出设备 → cpal 走 loopback
@@ -28,31 +65,23 @@ pub fn start() -> Option<Audio> {
     let stream_config: cpal::StreamConfig = cfg.config();
 
     let samples = Arc::new(Mutex::new(vec![0.0f32; FFT_SIZE]));
-    let sink = samples.clone();
-    let stream = device
-        .build_input_stream(
-            stream_config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buf) = sink.lock() {
-                    let mut i = 0;
-                    while i + channels <= data.len() {
-                        let mut m = 0.0f32;
-                        for c in 0..channels {
-                            m += data[i + c];
-                        }
-                        buf.push(m / channels as f32);
-                        i += channels;
-                    }
-                    let len = buf.len();
-                    if len > FFT_SIZE {
-                        buf.drain(0..len - FFT_SIZE);
-                    }
-                }
-            },
-            |err| eprintln!("[audio] 流错误: {err}"),
-            None,
-        )
-        .ok()?;
+    // 按设备实际采样格式分派——写死 f32 会在非 F32 设备上 BuildStreamError→静默无律动。
+    let stream = match cfg.sample_format() {
+        cpal::SampleFormat::F32 => {
+            build_stream::<f32>(&device, stream_config, samples.clone(), channels)
+        }
+        cpal::SampleFormat::I16 => {
+            build_stream::<i16>(&device, stream_config, samples.clone(), channels)
+        }
+        cpal::SampleFormat::U16 => {
+            build_stream::<u16>(&device, stream_config, samples.clone(), channels)
+        }
+        other => {
+            eprintln!("[audio] 不支持的采样格式 {other:?}，律动降级");
+            return None;
+        }
+    }
+    .ok()?;
     stream.play().ok()?;
 
     let mut planner = FftPlanner::new();
