@@ -1,6 +1,10 @@
 //! 璇玑 M0 骨架：`tao` 起窗 + `wry` 挂载系统 WebView，经 `xuanji://` 协议加载
 //! 干支四化 Web 核心，并注入 WE shim 让页面「以为还在 Wallpaper Engine 里」。
 
+// Windows release 不弹控制台黑窗（GUI 子系统）；debug 保留控制台以看 [web]/[shell] 日志。
+// 非 Windows 平台此属性无效果。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod audio;
 mod ipc;
 mod os;
