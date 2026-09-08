@@ -16,7 +16,8 @@ pub struct Audio {
     _stream: cpal::Stream,
     samples: Arc<Mutex<Vec<f32>>>, // 最近 FFT_SIZE 个单声道采样
     fft: Arc<dyn Fft<f32>>,
-    window: Vec<f32>, // Hann 窗
+    window: Vec<f32>,     // Hann 窗
+    pub sample_rate: f32, // 设备采样率（供 JS 按 Hz 分频，128 段对数分桶反解 band）
 }
 
 /// 按采样类型 `T` 建 loopback 输入流，回调把多声道下混成单声道 f32 存进 `sink`。
@@ -62,6 +63,7 @@ pub fn start() -> Option<Audio> {
     let cfg = device.default_output_config().ok()?;
     let channels = cfg.channels() as usize;
     let stream_config: cpal::StreamConfig = cfg.config();
+    let sample_rate = stream_config.sample_rate as f32;
 
     let samples = Arc::new(Mutex::new(vec![0.0f32; FFT_SIZE]));
     // 按设备实际采样格式分派——写死 f32 会在非 F32 设备上 BuildStreamError→静默无律动。
@@ -98,6 +100,7 @@ pub fn start() -> Option<Audio> {
         samples,
         fft,
         window,
+        sample_rate,
     })
 }
 

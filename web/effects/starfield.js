@@ -6,6 +6,7 @@
   var NEBULA_FS =
     '#version 300 es\nprecision highp float;\n' +
     'uniform vec2 u_res; uniform float u_time; uniform vec3 u_accent; uniform float u_audio; out vec4 frag;\n' +
+    'uniform float u_galaxy; uniform float u_meteor;\n' + // 专用参数：银河带强度 / 流星频率（默认皆 1）
     U.SEAL_GLSL +
     'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+34.5);return fract(p.x*p.y);}\n' +
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n' +
@@ -24,9 +25,9 @@
     ' vec3 col=base+neb*dens*0.6;\n' +
     // 银河带：一道斜向的密星辉光带
     ' float band=exp(-pow((dot(p,vec2(0.45,1.0))+0.05)/0.34,2.0));\n' +
-    ' col+=vec3(0.5,0.58,0.75)*band*(0.12+0.3*n)*0.5;\n' +
+    ' col+=vec3(0.5,0.58,0.75)*band*(0.12+0.3*n)*0.5*u_galaxy;\n' +
     // 流星偶发
-    ' col+=vec3(0.9,0.95,1.0)*(meteor(p,u_time,0.13)+meteor(p,u_time,0.57))*1.3;\n' +
+    ' col+=vec3(0.9,0.95,1.0)*(meteor(p,u_time,0.13)+meteor(p,u_time,0.57))*1.3*u_meteor;\n' +
     // 圣号星云：笔画处漫起一层清亮辉光托住星宿；随时间轻漾(域扭曲)让字形呼吸
     ' vec2 swp=vec2(fbm(p*2.5+vec2(t*0.1,0.0)),fbm(p*2.5+vec2(3.0,t*0.08)))-0.5;\n' +
     ' float sc=sealCov(gl_FragCoord.xy+swp*u_res.y*0.010,u_res);\n' +
@@ -121,7 +122,7 @@
     var lineProg = U.program(gl, LINE_VS, LINE_FS);
     var quad = U.fullscreenTriangle(gl);
 
-    var STAR_N = 1400;
+    var STAR_N = 2400; // 繁星缓冲上限；实际绘制数由 sf_stars 参数决定（默认 1400）
     var stars = buildStars(gl, STAR_N);
 
     // 北斗：亮星 + 连线
@@ -180,16 +181,20 @@
         h = nh;
         px = h / 900;
       },
-      frame: function (t) {
+      frame: function (t0) {
         // 每帧清 scene：nebula 未铺满 + 星点加色叠加，不清会累积成放射拖尾
         // （thunder/flowfield/ink 各自全屏覆盖 scene，无需此步）。
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
         var aspect = w / h;
         // 视差：星层随光标反向微移（跟随平滑坐标，停手保持不回弹）。
-        var mo = window.XuanjiFx.mouse;
-        var acc = window.XuanjiFx.accent;
-        var au = window.XuanjiFx.audio;
+        var Fx = window.XuanjiFx;
+        var mo = Fx.mouse;
+        var acc = Fx.accent;
+        var au = Fx.audio;
+        // 专用参数：速度倍率(缩放动画时间)、繁星数、银河带、流星频率。默认即原观感。
+        var t = t0 * Fx.pct('sf_speed', 1);
+        var starN = Math.max(200, Math.min(STAR_N, Math.round(Fx.param('sf_stars', 1400))));
         var parx = -(mo.x - 0.5),
           pary = -(mo.y - 0.5);
         gl.disable(gl.BLEND);
@@ -199,6 +204,8 @@
         gl.uniform2f(uni(nebula, 'u_par'), parx * 0.06, pary * 0.06); // 星云移得少
         gl.uniform3fv(uni(nebula, 'u_accent'), acc);
         gl.uniform1f(uni(nebula, 'u_audio'), au.level);
+        gl.uniform1f(uni(nebula, 'u_galaxy'), Fx.pct('sf_galaxy', 1));
+        gl.uniform1f(uni(nebula, 'u_meteor'), Fx.pct('sf_meteor', 1));
         U.bindSeal(gl, nebula, w, h, 1);
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -226,7 +233,7 @@
         gl.uniform1f(uni(starProg, 'u_starmix'), 0.0); // 繁星保留冷暖变化
         gl.uniform1f(uni(starProg, 'u_bright'), 1.0);
         gl.bindVertexArray(stars);
-        gl.drawArrays(gl.POINTS, 0, STAR_N);
+        gl.drawArrays(gl.POINTS, 0, starN);
 
         gl.uniform1f(uni(starProg, 'u_bright'), 2.2); // 北斗更亮
         gl.bindVertexArray(dipperStars);

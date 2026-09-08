@@ -14,6 +14,7 @@
     '#version 300 es\nprecision highp float;\n' +
     'uniform sampler2D u_dye; uniform vec2 u_res; uniform float u_time; uniform float u_dt;\n' +
     'uniform vec2 u_mouse; uniform float u_minf; uniform float u_audio; out vec4 frag;\n' +
+    'uniform float u_amount; uniform float u_diffuse;\n' + // 专用参数：墨量 / 扩散(流速场强度)，默认皆 1
     U.SEAL_GLSL +
     NOISE +
     'float pot(vec2 p){return fbm(p*2.3+vec2(u_time*0.08,u_time*0.05));}\n' + // 势场适度翻涌保持流动
@@ -22,12 +23,13 @@
     ' float dy=pot(p+vec2(0.0,e))-pot(p-vec2(0.0,e));\n' +
     ' return vec2(dy,-dx)/(2.0*e);}\n' +
     'void main(){vec2 uv=gl_FragCoord.xy/u_res;\n' +
-    ' vec2 vel=curl(uv)*0.9*0.0022;\n' + // 固定每帧位移，温和不冲散
+    ' vec2 vel=curl(uv)*0.9*0.0022*u_diffuse;\n' + // 固定每帧位移，温和不冲散；u_diffuse=扩散强度
     ' vec2 tom=u_mouse-uv;float dm2=dot(tom,tom);\n' +
     ' vel+=(vec2(-tom.y,tom.x)*1.6+tom*0.5)*exp(-dm2*26.0)*u_minf*0.004;\n' + // 鼠标搅动
     ' float d=texture(u_dye,uv-vel).r*0.99;\n' + // 固定步长向后平流 + 衰减(不受帧率抖动)
     ' float well=smoothstep(0.42-u_audio*0.12,0.74,fbm(uv*2.2-vec2(u_time*0.02,u_time*0.03)));\n' + // 音量越大墨涌越盛
-    ' d=max(d,well*(0.85+u_audio*0.5));\n' +
+    ' d=max(d,well*(0.85+u_audio*0.5)*u_amount);\n' + // u_amount=墨量
+
     ' d=max(d,exp(-dm2*140.0)*u_minf*0.9);\n' + // 鼠标注墨
     ' d=max(d,sealCov(gl_FragCoord.xy,u_res)*0.22);\n' + // 圣号周围少量流墨氛围（淡，任其被流场洇开），清晰笔画在渲染期叠加
     ' frag=vec4(clamp(d,0.0,1.0),0.0,0.0,1.0);}';
@@ -35,10 +37,12 @@
   // 染料 → 墨色（深底淡墨雾 + 焦墨 + 飞白 + 五行微染）
   var RENDER_FS =
     '#version 300 es\nprecision highp float;\n' +
-    'uniform sampler2D u_dye; uniform vec2 u_res; uniform vec3 u_accent; uniform float u_time; out vec4 frag;\n' +
+    'uniform sampler2D u_dye; uniform vec2 u_res; uniform vec3 u_accent; uniform float u_time; uniform float u_contrast; out vec4 frag;\n' +
     NOISE +
     U.SEAL_GLSL +
     'void main(){vec2 uv=gl_FragCoord.xy/u_res;float d=texture(u_dye,uv).r;\n' +
+    ' d=clamp((d-0.5)*u_contrast+0.5,0.0,1.0);\n' + // u_contrast=浓淡对比（绕中点拉伸，默认 1 不变）
+
 
     ' vec3 paper=vec3(0.022,0.022,0.028);vec3 wash=vec3(0.42,0.43,0.41);\n' + // 更黑的底 + 收暗的淡墨
     ' vec3 col=mix(paper,wash,smoothstep(0.08,0.62,d));\n' + // 墨显现，靠暗底+焦墨拉对比留白
@@ -100,10 +104,13 @@
         read = a;
         write = b;
       },
-      frame: function (t, dt) {
+      frame: function (t0, dt) {
         var prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-        var m = window.XuanjiFx.mouse;
+        var Fx = window.XuanjiFx;
+        var m = Fx.mouse;
         var d = dt > 0 ? Math.min(dt, 0.033) : 0.016;
+        // 专用参数（默认即原观感）：墨量 / 扩散 / 对比 / 速度(缩放时间)
+        var t = t0 * Fx.pct('ink_speed', 1);
 
         // 模拟一步：read → write
         gl.bindFramebuffer(gl.FRAMEBUFFER, write.fbo);
@@ -114,7 +121,9 @@
         gl.uniform1f(uni(simProg, 'u_dt'), d);
         gl.uniform2f(uni(simProg, 'u_mouse'), m.x, m.y);
         gl.uniform1f(uni(simProg, 'u_minf'), m.influence);
-        gl.uniform1f(uni(simProg, 'u_audio'), window.XuanjiFx.audio.level);
+        gl.uniform1f(uni(simProg, 'u_audio'), Fx.audio.level);
+        gl.uniform1f(uni(simProg, 'u_amount'), Fx.pct('ink_amount', 1));
+        gl.uniform1f(uni(simProg, 'u_diffuse'), Fx.pct('ink_diffuse', 1));
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, read.tex);
         gl.uniform1i(uni(simProg, 'u_dye'), 0);
@@ -128,7 +137,8 @@
         gl.useProgram(renderProg);
         gl.uniform2f(uni(renderProg, 'u_res'), canvas.width, canvas.height);
         gl.uniform1f(uni(renderProg, 'u_time'), t);
-        gl.uniform3fv(uni(renderProg, 'u_accent'), window.XuanjiFx.accent);
+        gl.uniform1f(uni(renderProg, 'u_contrast'), Fx.pct('ink_contrast', 1));
+        gl.uniform3fv(uni(renderProg, 'u_accent'), Fx.accent);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, write.tex);
         gl.uniform1i(uni(renderProg, 'u_dye'), 0);

@@ -6,12 +6,14 @@
   var FS =
     '#version 300 es\nprecision highp float;\n' +
     'uniform vec2 u_res; uniform float u_time; uniform vec2 u_mouse; uniform float u_minf; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
+    'uniform float u_freq; uniform float u_cloud; uniform float u_branch; uniform float u_cspeed;\n' + // 专用参数：闪电频率/云层明暗/分叉繁复/云涌速度（默认皆 1）
+
     U.SEAL_GLSL +
     'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+34.5);return fract(p.x*p.y);}\n' +
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n' +
     'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<5;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}\n' +
     // 一次击闪的时间包络：陡起快落 + 高频闪烁
-    'float strike(float t,float seed){float ph=fract(t*0.33+seed);\n' +
+    'float strike(float t,float seed){float ph=fract(t*0.33*u_freq+seed);\n' +
     ' float f=(1.0-smoothstep(0.0,0.14,ph))*smoothstep(0.0,0.015,ph);\n' +
     ' f*=0.55+0.45*noise(vec2(t*40.0,seed*13.0));return f;}\n' +
     // 闪电路径 x(y)：多倍频抖动 + 细锯齿，形成折线感
@@ -25,10 +27,10 @@
     ' float g=seg(p,baseX+boltX(p.y,s),1.0);\n' +
     ' float fy=0.05+0.5*fract(s*13.0);float sl=0.8*(fract(s*29.0)-0.5);\n' +
     ' float bx=baseX+boltX(fy,s)+(fy-p.y)*sl+0.05*(fbm(vec2(s*11.0,p.y*7.0))-0.5);\n' +
-    ' g+=seg(p,bx,0.5)*(p.y<fy?1.0:0.0);\n' +
+    ' g+=seg(p,bx,0.5)*u_branch*(p.y<fy?1.0:0.0);\n' +
     ' float fy2=0.5*fract(s*17.0);float sl2=0.7*(fract(s*41.0)-0.5);\n' +
     ' float bx2=baseX+boltX(fy2,s)+(fy2-p.y)*sl2;\n' +
-    ' g+=seg(p,bx2,0.35)*(p.y<fy2?1.0:0.0);\n' +
+    ' g+=seg(p,bx2,0.35)*u_branch*(p.y<fy2?1.0:0.0);\n' +
     ' return g*strike(t,s);}\n' +
     // 光标劈雷：离散击闪(大部分时间灭)，故随光标是「一次次劈现」而非横滑
     'float cstrike(float t){float ph=fract(t*0.7);\n' +
@@ -42,16 +44,17 @@
     ' vec2 uv=gl_FragCoord.xy/u_res;\n' +
     ' vec2 p=(gl_FragCoord.xy-0.5*u_res)/u_res.y;\n' +
     ' float t=u_time;\n' +
+    ' float ct=t*u_cspeed;\n' + // 云涌时间：受 u_cspeed 控速，与闪电时相独立
     // 体积云：域扭曲翻涌 + 密度梯度自阴影(伪体积光,上亮下暗) + 底部云雾
-    ' vec2 q=vec2(fbm(p*1.6+vec2(t*0.02,0.0)),fbm(p*1.6+vec2(3.1,1.7)-t*0.015));\n' +
-    ' float cl=fbm(p*1.9+1.7*q+vec2(0.0,t*0.03));\n' + // 翻涌云体
-    ' float above=fbm((p+vec2(0.0,0.055))*1.9+1.7*q+vec2(0.0,t*0.03));\n' +
+    ' vec2 q=vec2(fbm(p*1.6+vec2(ct*0.02,0.0)),fbm(p*1.6+vec2(3.1,1.7)-ct*0.015));\n' +
+    ' float cl=fbm(p*1.9+1.7*q+vec2(0.0,ct*0.03));\n' + // 翻涌云体
+    ' float above=fbm((p+vec2(0.0,0.055))*1.9+1.7*q+vec2(0.0,ct*0.03));\n' +
     ' float shade=clamp((cl-above)*5.0+0.5,0.0,1.0);\n' + // 密度向上增=受光
     ' vec3 base=mix(vec3(0.015,0.015,0.045),vec3(0.22,0.20,0.34),smoothstep(0.28,0.72,cl));\n' +
     ' vec3 storm=base*(0.5+0.75*shade);\n' + // 体积明暗(更亮更立体)
-    ' float fog=smoothstep(0.1,-0.45,p.y)*fbm(p*3.0+vec2(t*0.06,0.0))*0.28;\n' + // 底部云雾
+    ' float fog=smoothstep(0.1,-0.45,p.y)*fbm(p*3.0+vec2(ct*0.06,0.0))*0.28;\n' + // 底部云雾
     ' storm+=vec3(0.12,0.13,0.2)*fog;\n' +
-    ' storm*=1.0+u_bass*0.8;\n' + // 低频鼓点让云层微亮
+    ' storm*=(1.0+u_bass*0.8)*u_cloud;\n' + // 低频鼓点让云层微亮；u_cloud=云层整体明暗
 
     // 三道闪电（不同位置/时相）
     ' float b=bolt(p,-0.45,0.17,t)+bolt(p,0.05,0.53,t)+bolt(p,0.5,0.81,t);\n' +
@@ -101,6 +104,11 @@
         gl.uniform1f(uMinf, mo.influence);
         gl.uniform3fv(uAccent, window.XuanjiFx.accent);
         gl.uniform1f(gl.getUniformLocation(prog, 'u_bass'), window.XuanjiFx.audio.bass);
+        // 专用参数（默认皆 1 = 原观感）：闪电频率 / 云层明暗 / 分叉繁复 / 云涌速度
+        gl.uniform1f(gl.getUniformLocation(prog, 'u_freq'), window.XuanjiFx.pct('th_freq', 1));
+        gl.uniform1f(gl.getUniformLocation(prog, 'u_cloud'), window.XuanjiFx.pct('th_cloud', 1));
+        gl.uniform1f(gl.getUniformLocation(prog, 'u_branch'), window.XuanjiFx.pct('th_branch', 1));
+        gl.uniform1f(gl.getUniformLocation(prog, 'u_cspeed'), window.XuanjiFx.pct('th_speed', 1));
         U.bindSeal(gl, prog, w, h, 1);
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);

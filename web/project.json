@@ -129,6 +129,204 @@
 				"type" : "combo",
 				"value" : "color"
 			},
+			"sf_stars" : 
+			{
+				"condition" : "bgtype.value === 'starfield'",
+				"index" : 35,
+				"max" : 2400,
+				"min" : 200,
+				"order" : 134,
+				"text" : "星点密度",
+				"type" : "slider",
+				"value" : 1400
+			},
+			"sf_speed" : 
+			{
+				"condition" : "bgtype.value === 'starfield'",
+				"index" : 36,
+				"max" : 300,
+				"min" : 20,
+				"order" : 135,
+				"text" : "运转速度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"sf_galaxy" : 
+			{
+				"condition" : "bgtype.value === 'starfield'",
+				"index" : 37,
+				"max" : 200,
+				"min" : 0,
+				"order" : 136,
+				"text" : "银河带强度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"sf_meteor" : 
+			{
+				"condition" : "bgtype.value === 'starfield'",
+				"index" : 38,
+				"max" : 300,
+				"min" : 0,
+				"order" : 137,
+				"text" : "流星频率(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ink_amount" : 
+			{
+				"condition" : "bgtype.value === 'ink'",
+				"index" : 39,
+				"max" : 200,
+				"min" : 0,
+				"order" : 138,
+				"text" : "墨量(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ink_speed" : 
+			{
+				"condition" : "bgtype.value === 'ink'",
+				"index" : 40,
+				"max" : 300,
+				"min" : 20,
+				"order" : 139,
+				"text" : "流动速度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ink_contrast" : 
+			{
+				"condition" : "bgtype.value === 'ink'",
+				"index" : 41,
+				"max" : 250,
+				"min" : 30,
+				"order" : 140,
+				"text" : "浓淡对比(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ink_diffuse" : 
+			{
+				"condition" : "bgtype.value === 'ink'",
+				"index" : 42,
+				"max" : 250,
+				"min" : 20,
+				"order" : 141,
+				"text" : "扩散强度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"th_freq" : 
+			{
+				"condition" : "bgtype.value === 'thunder'",
+				"index" : 43,
+				"max" : 300,
+				"min" : 0,
+				"order" : 142,
+				"text" : "闪电频率(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"th_cloud" : 
+			{
+				"condition" : "bgtype.value === 'thunder'",
+				"index" : 44,
+				"max" : 200,
+				"min" : 30,
+				"order" : 143,
+				"text" : "云层明暗(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"th_branch" : 
+			{
+				"condition" : "bgtype.value === 'thunder'",
+				"index" : 45,
+				"max" : 250,
+				"min" : 0,
+				"order" : 144,
+				"text" : "分叉繁复(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"th_speed" : 
+			{
+				"condition" : "bgtype.value === 'thunder'",
+				"index" : 46,
+				"max" : 300,
+				"min" : 20,
+				"order" : 145,
+				"text" : "云涌速度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ff_count" : 
+			{
+				"condition" : "bgtype.value === 'flowfield'",
+				"index" : 47,
+				"max" : 3600,
+				"min" : 300,
+				"order" : 146,
+				"text" : "粒子数量",
+				"type" : "slider",
+				"value" : 2200
+			},
+			"ff_speed" : 
+			{
+				"condition" : "bgtype.value === 'flowfield'",
+				"index" : 48,
+				"max" : 300,
+				"min" : 20,
+				"order" : 147,
+				"text" : "流动速度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ff_trail" : 
+			{
+				"condition" : "bgtype.value === 'flowfield'",
+				"index" : 49,
+				"max" : 250,
+				"min" : 20,
+				"order" : 148,
+				"text" : "拖尾长度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"ff_glow" : 
+			{
+				"condition" : "bgtype.value === 'flowfield'",
+				"index" : 50,
+				"max" : 260,
+				"min" : 20,
+				"order" : 149,
+				"text" : "辉光强度(%)",
+				"type" : "slider",
+				"value" : 100
+			},
+			"audiobasshz" : 
+			{
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
+				"index" : 51,
+				"max" : 500,
+				"min" : 20,
+				"order" : 150,
+				"text" : "低频上限(Hz)",
+				"type" : "slider",
+				"value" : 250
+			},
+			"audiotreblehz" : 
+			{
+				"condition" : "['particles','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
+				"index" : 52,
+				"max" : 8000,
+				"min" : 1000,
+				"order" : 151,
+				"text" : "高频下限(Hz)",
+				"type" : "slider",
+				"value" : 2000
+			},
 			"autostart" : 
 			{
 				"index" : 34,

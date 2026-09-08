@@ -257,9 +257,11 @@ mod tests {
     #[test]
     fn schema_covers_all_declared_props() {
         let s = temp_settings("schema");
-        assert_eq!(s.schema.len(), 36);
+        assert_eq!(s.schema.len(), 54);
         assert!(s.schema.contains_key("particlecount"));
         assert!(s.schema.contains_key("autostart"));
+        assert!(s.schema.contains_key("ff_count"));
+        assert!(s.schema.contains_key("audiobasshz"));
     }
 
     #[test]

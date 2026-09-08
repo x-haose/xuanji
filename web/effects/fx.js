@@ -57,8 +57,21 @@
       mid = 0,
       treble = 0,
       all = 0;
-    var b1 = Math.floor(n * 0.12),
-      b2 = Math.floor(n * 0.45);
+    // 按真实 Hz 分频：低频=低频上限以下、高频=高频下限以上、中频居中。
+    // 128 段是对数分桶（band b 覆盖 FFT bin≈HALF^(b/n)，freq=HALF^(b/n)·sr/FFTN），
+    // 反解目标 Hz→band 索引。HALF/FFTN 与 audio.rs 分桶一致；sr 由壳侧下发。
+    var sr = typeof window.__xuanjiSR === 'number' ? window.__xuanjiSR : 48000;
+    var HALF = 512,
+      FFTN = 1024;
+    var hzToBand = function (hz) {
+      var binF = (hz * FFTN) / sr;
+      if (binF <= 1) return 0;
+      return Math.round((n * Math.log(binF)) / Math.log(HALF));
+    };
+    var bassHz = typeof window.audiobasshz === 'number' ? window.audiobasshz : 250;
+    var trebleHz = typeof window.audiotreblehz === 'number' ? window.audiotreblehz : 2000;
+    var b1 = Math.max(1, Math.min(n - 2, hzToBand(bassHz)));
+    var b2 = Math.max(b1 + 1, Math.min(n - 1, hzToBand(trebleHz)));
     for (var i = 0; i < n; i++) {
       var v = arr[i];
       all += v;
@@ -75,6 +88,12 @@
     audio.mid += (tm - audio.mid) * (tm > audio.mid ? 0.85 : 0.3);
     audio.treble += (tt - audio.treble) * (tt > audio.treble ? 0.85 : 0.3);
     audio.level += (tl - audio.level) * (tl > audio.level ? 0.85 : 0.3);
+  }
+
+  /// 读设置面板下发的特效专用参数（window.<key>，见 we-shim 通用镜像）。非数值回退 def。
+  function param(key, def) {
+    var v = window[key];
+    return typeof v === 'number' && isFinite(v) ? v : def;
   }
 
   /// 决定当前该显示哪个特效：强制选定 > 已注册的 bgtype > 无。
@@ -859,6 +878,12 @@
     accent: accent, // 今日五行主色 [r,g,b]（稳定引用，内容随日期更新）
     audio: audio, // 音频律动 {level,bass,mid,treble}（0..1，每拍更新）
     setAudio: setAudio, // 壳侧频谱注入入口
+    param: param, // 读设置面板下发的特效专用参数：param(key, 默认值)
+    pct: function (key, def) {
+      // 百分比滑块（默认值即当前观感对应的 100）→ 归一化倍率；缺省回退 def(倍率)。
+      var v = window[key];
+      return typeof v === 'number' && isFinite(v) ? v / 100 : def;
+    },
     /// 壳侧全局鼠标监听经 IPC 调用：喂入该屏归一化坐标并标记「刚移动过」。
     pointer: function (nx, ny) {
       pTarget.x = nx;

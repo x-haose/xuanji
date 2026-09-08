@@ -72,6 +72,15 @@
   /// 壳侧注入设置的入口：转调页面自挂的 wallpaperPropertyListener。
   /// 页面尚未挂上时静默跳过（页面稍后用自身默认值渲染）。
   window.__xuanjiApplyUserProperties = function (props) {
+    // 通用镜像：把每个属性的值挂到 window.<key>，特效引擎据此读专用参数——
+    // 不依赖原占卜页的 listener 认识这些新键（它只认自己那批）。数值键存为 Number。
+    if (props) {
+      for (var k in props) {
+        if (!Object.prototype.hasOwnProperty.call(props, k)) continue;
+        var pv = props[k] && props[k].value;
+        window[k] = typeof pv === 'string' && pv !== '' && !isNaN(pv) ? Number(pv) : pv;
+      }
+    }
     var l = window.wallpaperPropertyListener;
     if (l && typeof l.applyUserProperties === 'function') l.applyUserProperties(props);
   };

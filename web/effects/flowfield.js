@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  var N = 2200;
+  var N = 3600; // 粒子缓冲上限；实际模拟/绘制数由 ff_count 参数决定（默认 2200）
   var NOISE =
     'float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+34.5);return fract(p.x*p.y);}\n' +
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));vec2 u=f*f*(3.0-2.0*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n' +
@@ -13,6 +13,7 @@
     '#version 300 es\n' +
     'layout(location=0) in vec2 a_pos; layout(location=1) in float a_age;\n' +
     'uniform float u_time; uniform float u_dt; uniform vec2 u_mouse; uniform float u_minf; uniform float u_bass;\n' +
+    'uniform float u_speed;\n' +
     'uniform sampler2D u_seal; uniform vec4 u_sealRect; uniform float u_sealOn;\n' +
     'out vec2 v_pos; out float v_age;\n' +
     NOISE +
@@ -28,7 +29,7 @@
     ' return vec2(dy,-dx)/(2.0*e);}\n' +
     'void main(){\n' +
     ' float cC=covAt(a_pos*0.5+0.5);\n' + // 当前是否落在笔画上
-    ' vec2 np=a_pos+curl(a_pos)*(0.45+u_bass*1.1)*(1.0-cC*0.32)*u_dt;\n' + // 笔画内轻微减速（尘流穿过，不堆死）
+    ' vec2 np=a_pos+curl(a_pos)*(0.45+u_bass*1.1)*(1.0-cC*0.32)*u_speed*u_dt;\n' + // 笔画内轻微减速（尘流穿过，不堆死）；u_speed=流速倍率
     ' if(u_sealOn>0.5){vec2 uv=np*0.5+0.5;float e=0.014;\n' + // 温和吸向笔画：勾勒字形而不过度堆积
     '  vec2 g=vec2(covAt(uv+vec2(e,0.0))-covAt(uv-vec2(e,0.0)), covAt(uv+vec2(0.0,e))-covAt(uv-vec2(0.0,e)));\n' +
     '  np+=g*0.012;}\n' +
@@ -54,12 +55,12 @@
 
   var RENDER_FS =
     '#version 300 es\nprecision highp float;\n' +
-    'in float v_age; uniform vec3 u_accent; uniform float u_bass; out vec4 frag;\n' +
+    'in float v_age; uniform vec3 u_accent; uniform float u_bass; uniform float u_glow; out vec4 frag;\n' +
     'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);if(r>0.5)discard;\n' +
     ' float glow=smoothstep(0.5,0.0,r);\n' +
     ' float fade=smoothstep(0.0,0.8,v_age)*(1.0-smoothstep(6.0,9.0,v_age));\n' +
     ' vec3 col=mix(vec3(0.45,0.68,1.0),vec3(0.92,0.95,1.0),fract(v_age*0.2)*0.5);\n' + // 青白
-    ' frag=vec4(col*glow*fade*0.34*(1.0+u_bass*2.6),1.0);}'; // 降单颗粒亮度：密集叠加不易爆白
+    ' frag=vec4(col*glow*fade*0.34*u_glow*(1.0+u_bass*2.6),1.0);}'; // 降单颗粒亮度：密集叠加不易爆白；u_glow=辉光倍率
 
   function compile(gl, type, src) {
     var s = gl.createShader(type);
@@ -157,12 +158,14 @@
     var gAccent = gl.getUniformLocation(glowProg, 'u_accent');
     var rAccent = gl.getUniformLocation(renderProg, 'u_accent');
     var rBass = gl.getUniformLocation(renderProg, 'u_bass');
+    var rGlow = gl.getUniformLocation(renderProg, 'u_glow');
 
     var uTime = gl.getUniformLocation(updateProg, 'u_time');
     var uDt = gl.getUniformLocation(updateProg, 'u_dt');
     var uMouse = gl.getUniformLocation(updateProg, 'u_mouse');
     var uMinf = gl.getUniformLocation(updateProg, 'u_minf');
     var uBassU = gl.getUniformLocation(updateProg, 'u_bass');
+    var uSpeed = gl.getUniformLocation(updateProg, 'u_speed');
     var rPx = gl.getUniformLocation(renderProg, 'u_px');
     var uFade = gl.getUniformLocation(fadeProg, 'u_color');
     var uBlitTex = gl.getUniformLocation(blitProg, 'u_tex');
@@ -204,22 +207,26 @@
       },
       frame: function (t, dt) {
         var prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        // 专用参数：粒子数（≤缓冲上限 N）、流速、辉光、拖尾长度。默认即原观感。
+        var Fx = window.XuanjiFx;
+        var count = Math.max(200, Math.min(N, Math.round(Fx.param('ff_count', 2200))));
 
         // 迭代粒子状态：从 read 读、写入 write（关光栅化）
         gl.useProgram(updateProg);
         gl.uniform1f(uTime, t);
         gl.uniform1f(uDt, dt > 0 ? dt : 0.016);
-        var m = window.XuanjiFx.mouse;
+        var m = Fx.mouse;
         gl.uniform2f(uMouse, m.x * 2.0 - 1.0, m.y * 2.0 - 1.0); // [0,1] → clip[-1,1]
         gl.uniform1f(uMinf, m.influence);
-        gl.uniform1f(uBassU, window.XuanjiFx.audio.bass);
+        gl.uniform1f(uBassU, Fx.audio.bass);
+        gl.uniform1f(uSpeed, Fx.pct('ff_speed', 1));
         U.bindSeal(gl, updateProg, canvas.width, canvas.height, 1);
         gl.bindVertexArray(read.vao);
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
         gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, write.buf);
         gl.enable(gl.RASTERIZER_DISCARD);
         gl.beginTransformFeedback(gl.POINTS);
-        gl.drawArrays(gl.POINTS, 0, N);
+        gl.drawArrays(gl.POINTS, 0, count);
         gl.endTransformFeedback();
         gl.disable(gl.RASTERIZER_DISCARD);
         gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
@@ -231,16 +238,18 @@
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.useProgram(fadeProg);
-        gl.uniform4f(uFade, 0.02, 0.03, 0.06, 0.055);
+        // 拖尾长度：淡出 alpha 越小尾越长。默认 0.055（trail=100）；trail 越大 alpha 越小。
+        gl.uniform4f(uFade, 0.02, 0.03, 0.06, 0.055 / Math.max(0.2, Fx.pct('ff_trail', 1)));
         gl.bindVertexArray(quad);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
         gl.useProgram(renderProg);
         gl.uniform1f(rPx, px);
-        gl.uniform3fv(rAccent, window.XuanjiFx.accent);
-        gl.uniform1f(rBass, window.XuanjiFx.audio.bass);
+        gl.uniform3fv(rAccent, Fx.accent);
+        gl.uniform1f(rBass, Fx.audio.bass);
+        gl.uniform1f(rGlow, Fx.pct('ff_glow', 1));
         gl.bindVertexArray(write.vao);
-        gl.drawArrays(gl.POINTS, 0, N);
+        gl.drawArrays(gl.POINTS, 0, count);
         gl.disable(gl.BLEND);
 
         // 合成拖尾到场景（后期处理的 FBO，或默认帧缓冲）

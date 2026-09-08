@@ -38,8 +38,10 @@ enum UserEvent {
 }
 
 /// 把 128 段频谱下发到所有屏（喂 WE 音频回调 + 特效律动）。
-fn push_audio(screens: &[Screen], bands: &[f32]) {
-    let mut js = String::with_capacity(bands.len() * 6 + 48);
+fn push_audio(screens: &[Screen], bands: &[f32], sample_rate: f32) {
+    let mut js = String::with_capacity(bands.len() * 6 + 72);
+    // 先带上采样率（供 JS 按 Hz 分频反解 band），再推 128 段频谱。
+    js.push_str(&format!("window.__xuanjiSR={sample_rate:.0};"));
     js.push_str("window.__xuanjiPushAudio&&window.__xuanjiPushAudio([");
     for (i, v) in bands.iter().enumerate() {
         if i > 0 {
@@ -638,7 +640,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(a) = &audio {
             let now = Instant::now();
             if now >= next_audio {
-                push_audio(&screens, &a.bands());
+                push_audio(&screens, &a.bands(), a.sample_rate);
                 next_audio = now + AUDIO_TICK;
             }
             *control_flow = ControlFlow::WaitUntil(next_audio);

@@ -6,3 +6,4 @@
 # 设置页前端构建产物与依赖
 /web/settings/node_modules/
 /web/settings/dist/
+/dist/
