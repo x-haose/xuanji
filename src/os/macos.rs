@@ -169,3 +169,43 @@ pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
         (y - f.origin.y) / f.size.height,
     ))
 }
+
+/// 开机自启：写/删 `~/Library/LaunchAgents/dev.xuanji.app.plist`（用户级 LaunchAgent，
+/// `RunAtLoad` 登录即拉起当前 exe）。幂等：`true` 写入、`false` 删除。
+pub fn set_autostart(enabled: bool) {
+    let Some(home) = std::env::var_os("HOME") else {
+        eprintln!("[mac] 无 HOME 环境变量，开机自启未变更");
+        return;
+    };
+    let plist = std::path::Path::new(&home).join("Library/LaunchAgents/dev.xuanji.app.plist");
+    if !enabled {
+        let _ = std::fs::remove_file(&plist); // 不存在也无妨
+        return;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[mac] 取 exe 路径失败，开机自启未变更: {e}");
+            return;
+        }
+    };
+    let content = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTD/PropertyList-1.0.dtd\">\n\
+         <plist version=\"1.0\"><dict>\n\
+         <key>Label</key><string>dev.xuanji.app</string>\n\
+         <key>ProgramArguments</key><array><string>{}</string></array>\n\
+         <key>RunAtLoad</key><true/>\n\
+         </dict></plist>\n",
+        exe.display()
+    );
+    if let Some(dir) = plist.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        eprintln!("[mac] 建 LaunchAgents 目录失败: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::write(&plist, content) {
+        eprintln!("[mac] 写 LaunchAgent plist 失败: {e}");
+    }
+}

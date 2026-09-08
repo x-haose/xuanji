@@ -129,6 +129,14 @@
 				"type" : "combo",
 				"value" : "color"
 			},
+			"autostart" : 
+			{
+				"index" : 34,
+				"order" : 99,
+				"text" : "开机自动启动",
+				"type" : "bool",
+				"value" : false
+			},
 			"darktheme" : 
 			{
 				"index" : 3,

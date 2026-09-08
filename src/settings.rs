@@ -257,8 +257,9 @@ mod tests {
     #[test]
     fn schema_covers_all_declared_props() {
         let s = temp_settings("schema");
-        assert_eq!(s.schema.len(), 35);
+        assert_eq!(s.schema.len(), 36);
         assert!(s.schema.contains_key("particlecount"));
+        assert!(s.schema.contains_key("autostart"));
     }
 
     #[test]

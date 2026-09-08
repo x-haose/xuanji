@@ -21,6 +21,10 @@ use windows::Win32::Graphics::Dwm::{
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
+use windows::Win32::System::Registry::{
+    HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
+    RegCreateKeyExW, RegDeleteValueW, RegSetValueExW,
+};
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
@@ -288,6 +292,47 @@ pub fn screen_norm(x: f64, y: f64, index: usize) -> Option<(f64, f64)> {
         return None;
     }
     Some(((x - r.left as f64) / w, (r.bottom as f64 - y) / h))
+}
+
+/// 开机自启：写/删注册表 `HKCU\...\Run` 下的 `Xuanji` 值（当前用户级，无需管理员）。
+/// 幂等：`true` 写当前 exe 路径（带引号，含空格也安全）、`false` 删除该值。
+pub fn set_autostart(enabled: bool) {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[win] 取 exe 路径失败，开机自启未变更: {e}");
+            return;
+        }
+    };
+    // SAFETY: 句柄由 RegCreateKeyExW 写出后仅本函数内使用并在结束前 RegCloseKey；
+    // REG_SZ 数据传含结尾 NUL 的 UTF-16 字节切片，长度按字节数。
+    unsafe {
+        let mut hkey = HKEY::default();
+        let rc = RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+            None,
+            PCWSTR::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut hkey,
+            None,
+        );
+        if rc.is_err() {
+            eprintln!("[win] 打开 Run 注册表键失败: {rc:?}");
+            return;
+        }
+        if enabled {
+            let mut wide: Vec<u16> = format!("\"{}\"", exe.display()).encode_utf16().collect();
+            wide.push(0);
+            let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+            let _ = RegSetValueExW(hkey, w!("Xuanji"), None, REG_SZ, Some(bytes));
+        } else {
+            let _ = RegDeleteValueW(hkey, w!("Xuanji")); // 不存在返错也无妨
+        }
+        let _ = RegCloseKey(hkey);
+    }
 }
 
 /// 给透明设置窗加 DWM 系统背景（Win11 Acrylic 毛玻璃）。Win10 无此属性，调用被忽略、

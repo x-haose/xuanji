@@ -34,6 +34,17 @@ pub fn refresh_desktop() {
     windows::refresh_desktop();
 }
 
+/// 设置开机自启（mac=写/删 `~/Library/LaunchAgents` plist，Windows=写/删注册表 HKCU Run 键）。
+/// 幂等：`true` 注册当前 exe 路径、`false` 移除。其它平台 no-op。
+pub fn set_autostart(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    macos::set_autostart(enabled);
+    #[cfg(target_os = "windows")]
+    windows::set_autostart(enabled);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = enabled;
+}
+
 /// 给透明窗口加毛玻璃背衬（mac=`NSVisualEffectView`，Windows=DWM Acrylic）。其它平台 no-op。
 pub fn add_vibrancy(window: &tao::window::Window) {
     #[cfg(target_os = "macos")]

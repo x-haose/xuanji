@@ -16,8 +16,7 @@ pub struct Audio {
     _stream: cpal::Stream,
     samples: Arc<Mutex<Vec<f32>>>, // 最近 FFT_SIZE 个单声道采样
     fft: Arc<dyn Fft<f32>>,
-    window: Vec<f32>,            // Hann 窗
-    smooth: Mutex<[f32; BANDS]>, // 平滑(起快落慢)，视觉不抖
+    window: Vec<f32>, // Hann 窗
 }
 
 /// 按采样类型 `T` 建 loopback 输入流，回调把多声道下混成单声道 f32 存进 `sink`。
@@ -99,12 +98,12 @@ pub fn start() -> Option<Audio> {
         samples,
         fft,
         window,
-        smooth: Mutex::new([0.0; BANDS]),
     })
 }
 
 impl Audio {
-    /// 计算当前 128 段归一化频谱（0..1，对数频率分桶 + 平滑）。
+    /// 计算当前 128 段归一化频谱（0..1，对数频率分桶）。不在此做时间平滑——
+    /// 壳侧输出即时值，视觉平滑单独交给 JS 侧一级 EMA，避免两级串联平滑糊掉律动、增延迟。
     pub fn bands(&self) -> [f32; BANDS] {
         let buf = match self.samples.lock() {
             Ok(b) => b.clone(),
@@ -124,15 +123,6 @@ impl Audio {
             let (lo, hi) = (lo.min(half - 1), hi.min(half));
             let mag: f32 = c[lo..hi].iter().map(|x| x.norm()).sum::<f32>() / (hi - lo) as f32;
             *slot = (mag * 0.025).min(1.0);
-        }
-
-        // 平滑：起快(0.5)落慢(0.15)，视觉不闪
-        if let Ok(mut sm) = self.smooth.lock() {
-            for b in 0..BANDS {
-                let k = if out[b] > sm[b] { 0.5 } else { 0.15 };
-                sm[b] += (out[b] - sm[b]) * k;
-                out[b] = sm[b];
-            }
         }
         out
     }

@@ -71,10 +71,10 @@
       tm = (mid / Math.max(1, b2 - b1)) * sens,
       tt = (treble / Math.max(1, n - b2)) * sens * tw,
       tl = (all / n) * sens;
-    audio.bass += (tb - audio.bass) * (tb > audio.bass ? 0.6 : 0.2);
-    audio.mid += (tm - audio.mid) * (tm > audio.mid ? 0.6 : 0.2);
-    audio.treble += (tt - audio.treble) * (tt > audio.treble ? 0.6 : 0.2);
-    audio.level += (tl - audio.level) * (tl > audio.level ? 0.6 : 0.2);
+    audio.bass += (tb - audio.bass) * (tb > audio.bass ? 0.85 : 0.3);
+    audio.mid += (tm - audio.mid) * (tm > audio.mid ? 0.85 : 0.3);
+    audio.treble += (tt - audio.treble) * (tt > audio.treble ? 0.85 : 0.3);
+    audio.level += (tl - audio.level) * (tl > audio.level ? 0.85 : 0.3);
   }
 
   /// 决定当前该显示哪个特效：强制选定 > 已注册的 bgtype > 无。

@@ -94,6 +94,10 @@ fn set_and_broadcast(
 ) {
     match settings.set(key, value.clone(), target) {
         Ok(()) => {
+            // autostart 是壳侧 OS 副作用（Win 注册表 / mac LaunchAgent），非壁纸属性，单独落地。
+            if key == "autostart" {
+                os::set_autostart(value.as_bool().unwrap_or(false));
+            }
             // 切背景类型须整体重应用（带上粒子等参数触发页面 needReinit 重建）；普通改参只下发单键。
             // 目标屏过滤：target=Some 时只碰该屏；None 时下发每屏「它自己的」解析值。
             let full = key == "bgtype";
@@ -329,7 +333,7 @@ fn handle_ipc(
 }
 
 /// 音频推送节拍（约 30fps）。
-const AUDIO_TICK: Duration = Duration::from_millis(33);
+const AUDIO_TICK: Duration = Duration::from_millis(16);
 
 /// 显示器热插拔轮询间隔——每隔一会儿比对显示器排布，变化则重建壁纸窗。
 const SCREEN_CHECK: Duration = Duration::from_secs(2);
@@ -485,6 +489,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // 配置单一数据源 + 设置窗（懒建，单例）。
     let mut settings = settings::Settings::load(settings::Settings::config_path());
+    // 启动即把开机自启注册表/plist 对齐到持久化配置（幂等，防手动删注册表后与配置不符）。
+    os::set_autostart(
+        settings
+            .resolved()
+            .get("autostart")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    );
     let mut settings_win: Option<(Window, WebView)> = None;
 
     // 系统声音律动：loopback 捕获 + FFT，按节拍下发频谱。失败则静默降级。
