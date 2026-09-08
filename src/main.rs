@@ -185,9 +185,10 @@ fn init_settings_window(wv: &WebView, settings: &settings::Settings, screens: &[
 /// 深蓝底 + 七枚青色高斯亮点排成斗形。取不到（尺寸非法）返回 None，退回系统默认。
 fn app_icon() -> Option<tao::window::Icon> {
     const S: usize = 64;
-    let mut rgba = vec![0u8; S * S * 4];
-    for px in rgba.chunks_exact_mut(4) {
-        px.copy_from_slice(&[24, 26, 40, 255]);
+    // 深蓝底填满（每像素 RGBA）。逐像素 extend，避免依赖较新工具链的 slice 分块 API。
+    let mut rgba = Vec::with_capacity(S * S * 4);
+    for _ in 0..S * S {
+        rgba.extend_from_slice(&[24, 26, 40, 255]);
     }
     // 北斗七星归一化坐标（斗形），亮点染青 accent。
     let stars = [
