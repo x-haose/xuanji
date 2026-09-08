@@ -11,6 +11,7 @@
 [![壳](https://img.shields.io/badge/Rust-tao%20%2B%20wry-dea584?logo=rust)](#技术架构)
 [![特效](https://img.shields.io/badge/特效-WebGL2-59c9a5)](#四特效)
 [![设置](https://img.shields.io/badge/设置-Svelte%205%20%2B%20TS-ff3e00?logo=svelte)](#配置与设置)
+[![许可](https://img.shields.io/badge/许可-MIT-blue)](LICENSE)
 
 <img src="docs/screenshots/starfield.jpg" width="820" alt="璇玑 · 星汉灿烂" />
 
@@ -109,11 +110,27 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
+## 下载
+
+前往 **[Releases](https://github.com/x-haose/xuanji/releases)** 下载对应架构的压缩包：
+
+| 平台 | 架构 | 包名 |
+| --- | --- | --- |
+| Windows | x64 | `xuanji-win-x64.zip` |
+| Windows | arm64 | `xuanji-win-arm64.zip` |
+| macOS | Intel | `xuanji-mac-x64.zip` |
+| macOS | Apple Silicon | `xuanji-mac-arm64.zip` |
+
+Windows 为静态链接单文件，解压双击 `xuanji.exe` 即用（需系统已装 WebView2 Runtime，Win11 自带）。
+macOS 当前为未签名裸二进制，`.app` / dmg / 公证见[路线图](#路线图)。
+
 ## 从源码构建
 
 **前置**：[Rust](https://rustup.rs)（stable）、[Node.js](https://nodejs.org) 18+（仅为构建 Svelte 设置窗）。
 
 ```bash
+git clone https://github.com/x-haose/xuanji.git && cd xuanji
+
 # 1) 构建设置窗（Svelte/Vite → web/settings/dist，release 内嵌需要）
 cd web/settings && npm ci && npm run build && cd ../..
 
@@ -152,7 +169,6 @@ RUSTFLAGS="-C target-feature=+crt-static" \
 - [x] 每特效专属参数 · 音频 Hz 分频 · 开机自启 · 帧率上限 · 全屏暂停省电
 - [x] CI / Release 工作流（四架构预编译包）
 - [ ] 安装包：Windows MSI/NSIS、macOS `.app` + dmg + 签名公证
-- [ ] 多显示器坐标真机核验 · DWM 崩溃后自动重建
 - [ ] Linux（Wayland / wlroots）
 
 ## 由来
@@ -162,4 +178,4 @@ RUSTFLAGS="-C target-feature=+crt-static" \
 
 ## 许可
 
-本项目暂未选定开源许可证，发布前保留所有权利（All rights reserved）。
+[MIT](LICENSE) © 2026 昊色居士
