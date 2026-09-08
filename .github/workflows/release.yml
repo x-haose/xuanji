@@ -77,16 +77,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/settings/package-lock.json
       - name: 构建设置窗（release 内嵌需要 dist）
         run: cd web/settings && npm ci && npm run build
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
+      # 发版是一次性全新构建，不缓存——既省得踩 pull_request token 的缓存只写限制
+      # （token has no writable scopes 告警），也避免陈旧缓存混入发布产物。
       - name: 构建 release
         shell: bash
         env:
