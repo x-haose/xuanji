@@ -15,6 +15,8 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  # 手动补发/重跑（如某架构 runner 排队失败）；发布说明改取 CHANGELOG 对应版本节。
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,7 +26,7 @@ env:
 
 jobs:
   gate:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -122,10 +124,22 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: 从 PR 正文提取发布说明
+      - name: 生成发布说明
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: printf '%s' "$PR_BODY" | python3 .github/scripts/release_notes.py > RELEASE_NOTES.md
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          if [ -n "$PR_BODY" ]; then
+            # PR 合并触发：取正文「## 发布说明」一节。
+            printf '%s' "$PR_BODY" | python3 .github/scripts/release_notes.py > RELEASE_NOTES.md
+          else
+            # 手动触发：取 CHANGELOG 中该版本一节。
+            awk -v v="## [$VERSION]" 'index($0,v)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md > RELEASE_NOTES.md
+          fi
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::发布说明为空（PR 正文缺「## 发布说明」或 CHANGELOG 缺 v$VERSION 一节）"
+            exit 1
+          fi
       - name: 建 Release 并附四架构包
         env:
           GH_TOKEN: ${{ github.token }}
