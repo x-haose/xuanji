@@ -20,7 +20,10 @@ use windows::Win32::Graphics::Dwm::{
     DWM_SYSTEMBACKDROP_TYPE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    MonitorFromWindow,
+};
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
     RegCreateKeyExW, RegDeleteValueW, RegSetValueExW,
@@ -28,10 +31,11 @@ use windows::Win32::System::Registry::{
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
-    HWND_BOTTOM, LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SW_HIDE,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    GetForegroundWindow, GetWindowRect, HWND_BOTTOM, LWA_ALPHA, SMTO_NORMAL, SPI_SETDESKWALLPAPER,
+    SPIF_UPDATEINIFILE, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SendMessageTimeoutW,
+    SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    SystemParametersInfoW, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -332,6 +336,35 @@ pub fn set_autostart(enabled: bool) {
             let _ = RegDeleteValueW(hkey, w!("Xuanji")); // 不存在返错也无妨
         }
         let _ = RegCloseKey(hkey);
+    }
+}
+
+/// 前台是否有全屏应用（窗矩形铺满其所在显示器，且非桌面/任务栏）。含无边框全屏游戏/视频。
+pub fn foreground_fullscreen() -> bool {
+    // SAFETY: 只读前台窗与其显示器信息，句柄即用即弃；MONITORINFO 先置 cbSize。
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            return false;
+        }
+        match class_of(fg).as_str() {
+            "WorkerW" | "Progman" | "Shell_TrayWnd" | "" => return false, // 桌面/任务栏不算
+            _ => {}
+        }
+        let mut wr = RECT::default();
+        if GetWindowRect(fg, &mut wr).is_err() {
+            return false;
+        }
+        let mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+            return false;
+        }
+        let m = mi.rcMonitor;
+        wr.left <= m.left && wr.top <= m.top && wr.right >= m.right && wr.bottom >= m.bottom
     }
 }
 

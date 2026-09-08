@@ -30,6 +30,8 @@
   var raf = 0;
   var startTs = 0;
   var lastTs = 0;
+  var lastRender = 0; // 上次实际渲染时刻（fps 节流用）
+  var paused = false; // 全屏应用前台时壳侧置真 → 停渲省电
 
   // 鼠标交互：底层动画永远自行运行，指针只是叠加的局部扰动。
   // mouse.influence 由「近期是否移动」驱动，停手后衰减归零 → 无缝回纯氛围。
@@ -584,6 +586,18 @@
   function loop(ts) {
     raf = requestAnimationFrame(loop);
     if (!current) return;
+    // fps 节流：把渲染限到目标帧率省电。仅 1..120 生效，其余走显示器原生刷新。
+    var fps = window.fps;
+    if (
+      typeof fps === 'number' &&
+      fps >= 1 &&
+      fps <= 120 &&
+      lastRender &&
+      ts - lastRender < 1000 / fps - 1
+    ) {
+      return; // 未到目标帧间隔，跳过本次（不更新 lastTs，dt 累到下次渲染）
+    }
+    lastRender = ts;
     if (!startTs) startTs = ts;
     var t = (ts - startTs) / 1000;
     var dt = lastTs ? (ts - lastTs) / 1000 : 0;
@@ -673,8 +687,21 @@
     }
     currentName = name;
     startTs = lastTs = 0;
-    if (!raf) raf = requestAnimationFrame(loop);
+    if (!raf && !paused) raf = requestAnimationFrame(loop);
     hud('fx: ' + name + ' 运行中\ncanvas ' + canvas.width + 'x' + canvas.height);
+  }
+
+  /// 壳侧检测到全屏应用前台时暂停渲染省电（壁纸此时被完全遮挡）；离开时恢复。
+  function setPaused(p) {
+    p = !!p;
+    if (p === paused) return;
+    paused = p;
+    if (paused) {
+      if (raf) cancelAnimationFrame(raf), (raf = 0);
+    } else if (current && !raf) {
+      lastTs = 0; // 恢复后重置 dt，避免暂停期累积成一大跳
+      raf = requestAnimationFrame(loop);
+    }
   }
 
   window.addEventListener('resize', resize);
@@ -878,6 +905,7 @@
     accent: accent, // 今日五行主色 [r,g,b]（稳定引用，内容随日期更新）
     audio: audio, // 音频律动 {level,bass,mid,treble}（0..1，每拍更新）
     setAudio: setAudio, // 壳侧频谱注入入口
+    setPaused: setPaused, // 壳侧全屏应用暂停开关（省电）
     param: param, // 读设置面板下发的特效专用参数：param(key, 默认值)
     pct: function (key, def) {
       // 百分比滑块（默认值即当前观感对应的 100）→ 归一化倍率；缺省回退 def(倍率)。

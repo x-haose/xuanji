@@ -336,6 +336,8 @@ fn handle_ipc(
 
 /// 音频推送节拍（约 30fps）。
 const AUDIO_TICK: Duration = Duration::from_millis(16);
+/// 全屏应用检测节拍：每秒查一次前台是否全屏，省电暂停/恢复。
+const FS_CHECK: Duration = Duration::from_millis(1000);
 
 /// 显示器热插拔轮询间隔——每隔一会儿比对显示器排布，变化则重建壁纸窗。
 const SCREEN_CHECK: Duration = Duration::from_secs(2);
@@ -509,6 +511,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut last_screens_sig = screens_signature(&event_loop);
     let mut next_screen_check = Instant::now() + SCREEN_CHECK;
 
+    // 全屏应用暂停省电：前台被全屏应用占据时停渲 + 停音频下发，离开恢复。
+    let mut paused_fs = false;
+    let mut next_fs_check = Instant::now() + FS_CHECK;
+
     event_loop.run(move |event, target, control_flow| {
         match event {
             Event::NewEvents(StartCause::Init) => {
@@ -636,18 +642,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             None => ControlFlow::Wait,
         };
 
-        // 音频律动：按节拍取频谱下发，并让事件循环保持该节拍唤醒。
+        // 音频律动：按节拍取频谱下发，并让事件循环保持该节拍唤醒。暂停期不下发（省 evaluate）。
         if let Some(a) = &audio {
             let now = Instant::now();
             if now >= next_audio {
-                push_audio(&screens, &a.bands(), a.sample_rate);
+                if !paused_fs {
+                    push_audio(&screens, &a.bands(), a.sample_rate);
+                }
                 next_audio = now + AUDIO_TICK;
             }
-            *control_flow = ControlFlow::WaitUntil(next_audio);
+            if !paused_fs {
+                *control_flow = ControlFlow::WaitUntil(next_audio);
+            }
+        }
+
+        // 全屏应用暂停省电：每秒查一次前台是否全屏，翻转则通知各壁纸窗停渲/恢复。
+        let now = Instant::now();
+        if now >= next_fs_check {
+            next_fs_check = now + FS_CHECK;
+            let fs = os::foreground_fullscreen();
+            if fs != paused_fs {
+                paused_fs = fs;
+                let js = format!("window.XuanjiFx&&XuanjiFx.setPaused({fs})");
+                for s in &screens {
+                    let _ = s.webview.evaluate_script(&js);
+                }
+            }
         }
 
         // 显示器热插拔：定期比对排布，变化则重建全部壁纸窗（新屏建/去屏关/重排重贴）。
-        let now = Instant::now();
         if now >= next_screen_check {
             next_screen_check = now + SCREEN_CHECK;
             let sig = screens_signature(target);
@@ -656,10 +679,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 rebuild_screens(target, &url, &proxy, debug_top, &mut screens);
             }
         }
-        // 保证按屏检查节拍唤醒（与淡入/音频取更早者）。
+        // 保证按屏检查 / 全屏检查节拍唤醒（与淡入/音频取更早者）。
+        let wake = next_screen_check.min(next_fs_check);
         *control_flow = match *control_flow {
-            ControlFlow::Wait => ControlFlow::WaitUntil(next_screen_check),
-            ControlFlow::WaitUntil(t) => ControlFlow::WaitUntil(t.min(next_screen_check)),
+            ControlFlow::Wait => ControlFlow::WaitUntil(wake),
+            ControlFlow::WaitUntil(t) => ControlFlow::WaitUntil(t.min(wake)),
             other => other,
         };
     });

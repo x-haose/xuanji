@@ -34,6 +34,20 @@ pub fn refresh_desktop() {
     windows::refresh_desktop();
 }
 
+/// 是否有全屏应用占据前台（壁纸此时被完全遮挡，应暂停渲染省电）。
+/// Windows：前台窗矩形铺满其所在显示器且非桌面/任务栏 → 真（含无边框全屏游戏/视频）。
+/// mac：全屏应用走独立 Space、壁纸所在 Space 被遮，WKWebView 自动节流 rAF，无需显式暂停 → 恒假。
+pub fn foreground_fullscreen() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        windows::foreground_fullscreen()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
 /// 设置开机自启（mac=写/删 `~/Library/LaunchAgents` plist，Windows=写/删注册表 HKCU Run 键）。
 /// 幂等：`true` 注册当前 exe 路径、`false` 移除。其它平台 no-op。
 pub fn set_autostart(enabled: bool) {

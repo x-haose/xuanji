@@ -327,6 +327,17 @@
 				"type" : "slider",
 				"value" : 2000
 			},
+			"fps" : 
+			{
+				"condition" : "['starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
+				"index" : 53,
+				"max" : 120,
+				"min" : 15,
+				"order" : 152,
+				"text" : "帧率上限",
+				"type" : "slider",
+				"value" : 60
+			},
 			"autostart" : 
 			{
 				"index" : 34,

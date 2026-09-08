@@ -38,6 +38,7 @@ function groupOf(key: string): string {
     key.startsWith('ink_') || // 水墨专属
     key.startsWith('th_') || // 雷霆专属
     key.startsWith('ff_') || // 流光专属
+    key === 'fps' || // 帧率上限（特效渲染节流）
     key === 'movedirection' ||
     key === 'videofile' ||
     key === 'slideshowinterval'
