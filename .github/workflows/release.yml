@@ -30,7 +30,7 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
       release: ${{ steps.ver.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -73,8 +73,8 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -109,7 +109,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/xuanji" pkg/xuanji
           printf '璇玑 Xuanji · 东方玄学动态壁纸\n未签名裸二进制（.app/dmg + 公证属阶段四）：\n首次运行 chmod +x xuanji 后于终端启动，或右键打开绕过 Gatekeeper。\n' > pkg/使用说明.txt
           (cd pkg && zip -q "../xuanji-${{ matrix.name }}.zip" xuanji 使用说明.txt)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: xuanji-${{ matrix.name }}.zip
@@ -120,8 +120,8 @@ jobs:
     if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
