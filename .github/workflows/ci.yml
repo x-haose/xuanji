@@ -1,0 +1,49 @@
+# PR / 推送校验：Rust 门槛（fmt / clippy / test）+ 设置窗 Web（svelte-check / build）。
+# Rust 在 macOS 与 Windows 各跑一遍——壁纸层/鼠标/音频/注册表等代码按 target_os 分支，
+# 只在 ubuntu 上编只会走空实现分支、盖不到平台代码。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: 格式检查
+        run: cargo fmt --check
+      - name: Clippy（零告警）
+        run: cargo clippy --all-targets -- -D warnings
+      - name: 测试
+        run: cargo test --locked
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/settings/package-lock.json
+      - name: 安装依赖
+        run: cd web/settings && npm ci
+      - name: 类型检查（svelte-check 零错）
+        run: cd web/settings && npm run check
+      - name: 构建设置窗
+        run: cd web/settings && npm run build

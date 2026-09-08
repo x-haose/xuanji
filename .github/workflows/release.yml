@@ -1,0 +1,140 @@
+# 合并到 main 即发版（构建应用、发 GitHub Release）。
+#
+# 版本号唯一来源是 Cargo.toml 的 [package].version：PR 里改了它才发版，没改就跳过——
+# 「合并普通 PR」与「发一个版本」同一条路径，不必记两套流程。
+# tag v<version> 已存在即视为未改版本号，跳过。
+#
+# 四架构各用原生 runner 构建（win x64 / win arm64 / mac x64 / mac arm64），避免交叉工具链坑。
+# 每个 runner 先 npm 构建设置窗（release 由 rust-embed 内嵌 web/settings/dist），再 cargo release。
+# Windows 静态链接 CRT（单文件绿色运行）；exe 图标与 GUI 子系统由 build.rs / 属性在 release 生效。
+#
+# Release 描述取自 PR 正文「## 发布说明」一节（见 pull_request_template.md）。
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      release: ${{ steps.ver.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: 取版本号，判断本次是否发版
+        id: ver
+        run: |
+          version=$(sed -n '/^\[package\]/,/^\[/p' Cargo.toml \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::Cargo.toml 里读不到 [package] 的 version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "v$version 已存在，本次 PR 未改版本号，跳过发版。"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "将发布 v$version。"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: win-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+          - name: mac-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+          - name: mac-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/settings/package-lock.json
+      - name: 构建设置窗（release 内嵌需要 dist）
+        run: cd web/settings && npm ci && npm run build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: 构建 release
+        shell: bash
+        env:
+          # Windows 静态链接 CRT → 单文件零依赖（免 vcruntime）；mac 不需要。
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: 打包（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "pkg"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/xuanji.exe" "$dir/xuanji.exe"
+          "璇玑 Xuanji · 东方玄学动态壁纸`n双击 xuanji.exe 运行；托盘太极图标里 背景 / 设置 / 退出。`n需 WebView2 Runtime（Win11 自带）。" | Out-File -Encoding utf8 "$dir/使用说明.txt"
+          Compress-Archive -Path "$dir/*" -DestinationPath "xuanji-${{ matrix.name }}.zip" -Force
+      - name: 打包（macOS）
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p pkg
+          cp "target/${{ matrix.target }}/release/xuanji" pkg/xuanji
+          printf '璇玑 Xuanji · 东方玄学动态壁纸\n未签名裸二进制（.app/dmg + 公证属阶段四）：\n首次运行 chmod +x xuanji 后于终端启动，或右键打开绕过 Gatekeeper。\n' > pkg/使用说明.txt
+          (cd pkg && zip -q "../xuanji-${{ matrix.name }}.zip" xuanji 使用说明.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: xuanji-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [gate, build]
+    if: needs.gate.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: 从 PR 正文提取发布说明
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" | python3 .github/scripts/release_notes.py > RELEASE_NOTES.md
+      - name: 建 Release 并附四架构包
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file RELEASE_NOTES.md \
+            release-assets/*.zip
