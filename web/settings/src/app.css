@@ -28,10 +28,11 @@ body {
     'Microsoft YaHei',
     sans-serif;
   color: var(--text);
-  /* 一处极淡的顶部居中光晕（对称、不偏角），避免各区亮度差异。 */
+  /* 不透明底：透明窗 + 动态内容在 WebView2 会残影（切分区透出上一屏淡影），
+     两平台统一用不透明底清屏、观感一致。顶部一处极淡光晕，避免各区亮度差异。 */
   background:
     radial-gradient(130% 100% at 50% -20%, color-mix(in oklch, var(--accent) 7%, transparent), transparent 60%),
-    var(--bg-veil);
+    var(--bg);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
