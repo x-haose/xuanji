@@ -472,8 +472,10 @@
     if (!texts.length) return;
     var now = new Date();
     var h = now.getHours();
-    var base = h >= 12 ? 6 : 0; // 下午从午(6)起，上午从子(0)起
-    var cur = Math.floor(((h + 1) % 24) / 2); // 当前时辰全局索引(0=子)
+    var cur = Math.floor(((h + 1) % 24) / 2); // 当前时辰全局索引(0=子..11=亥)
+    // 分组按「当前时辰」而非时钟正午：午时从 11:00 起（cur=6），若用 h>=12 分界，
+    // 11:00–11:59 会仍显示上午组(子..巳)、当前的午不在其中 → 时辰不显示不高亮。
+    var base = cur >= 6 ? 6 : 0; // 午起显示 午未申酉戌亥，子起显示 子丑寅卯辰巳
     texts.forEach(function (t) {
       var shi = base + +t.getAttribute('data-k');
       t.textContent = DIZHI[shi];
