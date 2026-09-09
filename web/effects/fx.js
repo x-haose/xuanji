@@ -275,9 +275,11 @@
   /// 给现有圆表盘加性注入浑天仪元素：同心环 + 二十八宿刻度 + 黄道/赤道斜环。
   /// 用今日五行色，显隐由 body.fx-active 控制；不动指针旋转逻辑，幂等。
   /// 八字改造：把「天干/地支」小字行改成命盘式大四柱（年月日时，干上支下，大号五行色）。
+  /// 八字大四柱：建一次浮层后，每次调用只同步文字+颜色——页面每 10s `updateTime()`
+  /// 重算干支（跨零点换日柱、每时辰换时柱），故本函数须挂定时器周期刷新，否则冻在建时那刻。
   function enhanceBazi() {
     var code = document.getElementById('code');
-    if (!code || document.getElementById('xj-bazi-pillars')) return;
+    if (!code) return;
     var gk = ['code-gan-year', 'code-gan-month', 'code-gan-day', 'code-gan-hour'];
     var zk = ['code-zhi-year', 'code-zhi-month', 'code-zhi-day', 'code-zhi-hour'];
     var gans = gk.map(function (id) {
@@ -286,39 +288,54 @@
     var zhis = zk.map(function (id) {
       return document.getElementById(id);
     });
-    var ok = gans.every(function (x) {
-      return x && x.textContent.trim();
-    });
-    if (!ok) return; // 页面尚未填充，稍后重试
-    var labels = ['年', '月', '日', '时'];
-    var wrap = document.createElement('div');
-    wrap.id = 'xj-bazi-pillars';
-    wrap.style.cssText =
-      'display:flex;gap:22px;justify-content:flex-start;margin:2px 0 16px;padding-left:4px;';
+    if (
+      !gans.every(function (x) {
+        return x && x.textContent.trim();
+      })
+    ) {
+      return; // 页面尚未填充，稍后重试
+    }
     var bigFont =
       'font-size:1.55em;font-weight:500;line-height:1.15;font-family:"Songti SC","STSong",serif;';
-    for (var i = 0; i < 4; i++) {
-      var col = document.createElement('div');
-      col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:5px;';
-      var lab = document.createElement('div');
-      lab.textContent = labels[i];
-      lab.style.cssText = 'font-size:0.58em;color:rgba(255,255,255,0.35);letter-spacing:0.12em;';
-      var gan = document.createElement('div');
-      gan.textContent = gans[i].textContent.trim();
-      gan.style.cssText = bigFont + 'color:' + getComputedStyle(gans[i]).color + ';';
-      var zhi = document.createElement('div');
-      zhi.textContent = zhis[i].textContent.trim();
-      zhi.style.cssText = bigFont + 'color:' + getComputedStyle(zhis[i]).color + ';';
-      col.appendChild(lab);
-      col.appendChild(gan);
-      col.appendChild(zhi);
-      wrap.appendChild(col);
+    var wrap = document.getElementById('xj-bazi-pillars');
+    if (!wrap) {
+      var labels = ['年', '月', '日', '时'];
+      wrap = document.createElement('div');
+      wrap.id = 'xj-bazi-pillars';
+      wrap.style.cssText =
+        'display:flex;gap:22px;justify-content:flex-start;margin:2px 0 16px;padding-left:4px;';
+      for (var i = 0; i < 4; i++) {
+        var col = document.createElement('div');
+        col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:5px;';
+        var lab = document.createElement('div');
+        lab.textContent = labels[i];
+        lab.style.cssText = 'font-size:0.58em;color:rgba(255,255,255,0.35);letter-spacing:0.12em;';
+        var gan = document.createElement('div');
+        gan.className = 'xj-bz-gan';
+        gan.style.cssText = bigFont;
+        var zhi = document.createElement('div');
+        zhi.className = 'xj-bz-zhi';
+        zhi.style.cssText = bigFont;
+        col.appendChild(lab);
+        col.appendChild(gan);
+        col.appendChild(zhi);
+        wrap.appendChild(col);
+      }
+      var tg = document.getElementById('code-tiangan');
+      var dz = document.getElementById('code-dizhi');
+      if (tg) tg.style.display = 'none';
+      if (dz) dz.style.display = 'none';
+      code.insertBefore(wrap, code.firstChild);
     }
-    var tg = document.getElementById('code-tiangan');
-    var dz = document.getElementById('code-dizhi');
-    if (tg) tg.style.display = 'none';
-    if (dz) dz.style.display = 'none';
-    code.insertBefore(wrap, code.firstChild);
+    // 同步：读活的（隐藏的）原生干支元素，写进大四柱——跨天/跨时辰自动更新。
+    var gd = wrap.querySelectorAll('.xj-bz-gan');
+    var zd = wrap.querySelectorAll('.xj-bz-zhi');
+    for (var j = 0; j < 4; j++) {
+      gd[j].textContent = gans[j].textContent.trim();
+      gd[j].style.color = getComputedStyle(gans[j]).color;
+      zd[j].textContent = zhis[j].textContent.trim();
+      zd[j].style.color = getComputedStyle(zhis[j]).color;
+    }
   }
 
   /// 宜忌拉成通栏页脚：与上方八字+万年历两栏同宽、居中，不再是窄块吊在中间。stop 还原。
@@ -363,12 +380,16 @@
     }
     ids.forEach(function (id) {
       var el = document.getElementById(id);
-      if (!el || el.getAttribute('data-xj-pill')) return;
+      if (!el) return;
       var spans = el.querySelectorAll('span[style*="color"]');
       if (spans.length < 4) return;
+      // 守卫放到 span 级：页面每 10s 重算四化时会重建这些 span（新的没标记），
+      // 于是本函数经定时器重跑即重新样式化，四化随时间保持更新（流日/流时四化会变）。
+      if (spans[0].getAttribute('data-xj-pill')) return;
       for (var i = 0; i < 4; i++) {
         var s = spans[i];
         var col = getComputedStyle(s).color;
+        s.setAttribute('data-xj-pill', '1');
         s.style.display = 'inline-flex';
         s.style.alignItems = 'center';
         s.style.gap = '4px';
@@ -382,7 +403,6 @@
         lab.style.cssText = 'font-size:0.66em;opacity:0.72;';
         s.insertBefore(lab, s.firstChild);
       }
-      el.setAttribute('data-xj-pill', '1');
     });
   }
 
@@ -946,6 +966,11 @@
     }, 800); // 时钟/布局/八字若晚于此刻才填好，兜底补上
     setInterval(enhanceProgress, 60000); // 进度环随时间更新
     setInterval(updateShichen, 60000); // 每分钟校准当前时辰高亮
+    // 八字四柱 / 四化随页面每 10s 的 updateTime 重算而刷新（跨零点换日柱、每时辰换时柱）。
+    setInterval(function () {
+      enhanceBazi();
+      enhanceSihua();
+    }, 30000);
 
     // 轮播：?fx=cycle 每 12s 自动切下一个特效，零权限、无需重启，供快速过目全部。
     if (forced === 'cycle') {
