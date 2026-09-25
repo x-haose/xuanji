@@ -70,6 +70,38 @@ fn apply_to(screen: &Screen, props: &serde_json::Map<String, serde_json::Value>)
     let js =
         format!("window.__xuanjiApplyUserProperties&&window.__xuanjiApplyUserProperties({json})");
     let _ = screen.webview.evaluate_script(&js);
+    if let Some(dir) = props.get("bgdir").and_then(|v| v.as_str()) {
+        push_dir_files(screen, "bgdir", dir);
+    }
+}
+
+/// 目录型属性（WE `mode: fetchall`）：列出目录内图片，经 WE 契约
+/// `userDirectoryFilesAddedOrChanged` 整体下发（页面据此替换轮播列表）。
+/// 目录为空串或读取失败时下发空列表，页面轮播随之清空。
+fn push_dir_files(screen: &Screen, key: &str, dir: &str) {
+    let files: Vec<String> = if dir.is_empty() {
+        Vec::new()
+    } else {
+        match protocol::list_images(std::path::Path::new(dir)) {
+            Ok(paths) => paths
+                .into_iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect(),
+            Err(e) => {
+                eprintln!("[shell] 读取目录失败 {dir}: {e}");
+                Vec::new()
+            }
+        }
+    };
+    let args = serde_json::json!([key, files]);
+    let js = format!("window.__xuanjiDirectoryFiles&&window.__xuanjiDirectoryFiles(...{args})");
+    let _ = screen.webview.evaluate_script(&js);
+}
+
+/// 通知单块壁纸窗全屏暂停状态（走 we-shim：冻结帧驱动 + 页面 WE 契约 setPaused）。
+fn set_paused(screen: &Screen, paused: bool) {
+    let js = format!("window.__xuanjiSetPaused&&window.__xuanjiSetPaused({paused})");
+    let _ = screen.webview.evaluate_script(&js);
 }
 
 /// 某屏解析配置时的有效作用域：**per-screen 覆盖仅在多屏时生效**。
@@ -245,7 +277,9 @@ fn build_settings_window(
     os::add_vibrancy(&window);
     let webview = WebViewBuilder::new()
         .with_transparent(true)
-        .with_custom_protocol("xuanji".into(), move |_id, req| protocol::serve(&req))
+        .with_asynchronous_custom_protocol("xuanji".into(), |_id, req, res| {
+            protocol::handle(req, res)
+        })
         .with_ipc_handler(move |req| {
             if let Some(msg) = ipc::parse(req.body()) {
                 let _ = proxy.send_event(UserEvent::Ipc(msg));
@@ -390,8 +424,8 @@ fn build_screen(
     let webview = WebViewBuilder::new()
         .with_background_color((46, 46, 46, 255))
         .with_ipc_handler(|req| eprintln!("[web] {}", req.body()))
-        .with_custom_protocol("xuanji".into(), move |_id, request| {
-            protocol::serve(&request)
+        .with_asynchronous_custom_protocol("xuanji".into(), |_id, req, res| {
+            protocol::handle(req, res)
         })
         .with_initialization_script(WE_SHIM)
         .with_on_page_load_handler(move |event, _url| {
@@ -537,8 +571,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             Event::UserEvent(UserEvent::PageLoaded(i)) => {
                 // 页面就绪即下发该屏配置（壳侧为唯一配置来源，多屏按 id 解析、单屏走全局）。
+                // 页面初始为未暂停：全屏期间新建的窗（热插拔重建 / 重载）须补发暂停，否则不省电。
                 if let Some(s) = screens.get(i) {
                     apply_to(s, &settings.resolved_for(screen_scope(&screens, s)));
+                    if paused_fs {
+                        set_paused(s, true);
+                    }
                 }
                 if let Some(s) = screens.get_mut(i)
                     && !s.revealed
@@ -668,9 +706,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             let fs = os::foreground_fullscreen();
             if fs != paused_fs {
                 paused_fs = fs;
-                let js = format!("window.XuanjiFx&&XuanjiFx.setPaused({fs})");
                 for s in &screens {
-                    let _ = s.webview.evaluate_script(&js);
+                    set_paused(s, fs);
                 }
             }
         }

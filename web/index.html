@@ -1001,15 +1001,16 @@ function applyCustomBackground() {
     body.style.backgroundImage = '';
     body.style.backgroundSize = '';
     stopGradAnimation();
+    stopSlideshow();
     // 非视频背景时释放视频解码资源（防止从视频切换到渐变/纯色/粒子后内存泄漏）
     if (type !== 'video' && bgVideoEl) {
         bgVideoEl.style.display = 'none';
         bgVideoEl.removeAttribute('src');
         try { bgVideoEl.load(); } catch(e) {}
     }
-    // 纯色/图片/视频背景不需要 backdrop-filter（背后无动态内容）
+    // 纯色/图片/视频/轮播背景不需要 backdrop-filter（背后无动态内容）
     // 直接移除滤镜而非设零值——CEF 合成器可能不优化 blur(0px)，仍会创建 backdrop 图层
-    if (type === 'color' || type === 'image' || type === 'video') {
+    if (type === 'color' || type === 'image' || type === 'video' || type === 'slideshow') {
         body.classList.add('no-glass-blur');
     } else {
         body.classList.remove('no-glass-blur');
@@ -1017,17 +1018,14 @@ function applyCustomBackground() {
     // 闪电canvas仅雷法粒子需要；其他模式隐藏以释放合成器资源（全屏大图层）
     if (lc) lc.style.display = (type === 'particles' && particleConfig.style === 'thunder') ? '' : 'none';
     if (particles) particles.style.display = (type === 'particles') ? 'block' : 'none';
-    // 非粒子模式：销毁粒子实例以停止内部 rAF 渲染循环（hidden 不阻止渲染）
+    // 非粒子模式销毁粒子实例（display:none 不阻止其 rAF 渲染）；粒子模式缺实例则建
     if (type !== 'particles') {
-        if (window.pJSDom && window.pJSDom.length > 0) {
-            window.pJSDom.forEach(function(old) {
-                try { if (old.pJS && old.pJS.fn) old.pJS.fn.canvas.clear(); } catch(e) {}
-            });
-            window.pJSDom = [];
-        }
-        if (particles) { while (particles.firstChild) { particles.removeChild(particles.firstChild); } }
+        destroyParticles();
         audioModTimerActive = false; stopAudioMod();
-    } else if (audioReactive) { audioModTimerActive = true; startAudioMod(); }
+    } else {
+        if (window.pJSDom.length === 0) reinitParticles();
+        if (audioReactive) { audioModTimerActive = true; startAudioMod(); }
+    }
     if (type === 'gradient') {
         if (gradientType === 'linear') {
             startLinearAnimation();
@@ -1039,14 +1037,9 @@ function applyCustomBackground() {
     } else if (type === 'color') {
         body.style.background = bgSolidColor;
     } else if (type === 'image') {
-        if (bgImagePath) {
-            body.style.backgroundImage = 'url("file:///' + bgImagePath.replace(/\\/g, '/') + '")';
-            body.style.backgroundSize = 'cover';
-            body.style.backgroundPosition = 'center';
-        }
+        if (bgImagePath) { showBackgroundImage(bgImagePath); }
     } else if (type === 'video') {
         if (bgVideoPath) {
-            const path = 'file:///' + bgVideoPath.replace(/\\/g, '/');
             if (!bgVideoEl) {
                 bgVideoEl = document.createElement('video');
                 bgVideoEl.autoplay = true;
@@ -1055,24 +1048,40 @@ function applyCustomBackground() {
                 bgVideoEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
                 document.body.insertBefore(bgVideoEl, document.body.firstChild);
             }
-            bgVideoEl.src = path;
+            bgVideoEl.src = localFileUrl(bgVideoPath);
             bgVideoEl.style.display = 'block';
-            body.style.backgroundImage = '';
         }
     } else if (type === 'slideshow') {
-        body.style.backgroundImage = '';
-        // slideshow display handled by onDirectoryFilesChanged
+        showSlide();
+        startSlideshow();
     }
 }
 
+// 本地文件经壳侧协议 /__local/ 读取：页面源（xuanji:// / http://xuanji.localhost）不允许加载 file://。
+// 相对 origin 的路径在 mac / Windows 两种协议头下都成立。
+function localFileUrl(path) {
+    return '/__local/' + encodeURIComponent(path);
+}
+
+function showBackgroundImage(path) {
+    var body = document.body;
+    body.style.backgroundImage = 'url("' + localFileUrl(path) + '")';
+    body.style.backgroundSize = 'cover';
+    body.style.backgroundPosition = 'center';
+}
+
+// 轮播当前张；列表为空时不显示
+function showSlide() {
+    if (bgSlideFiles.length > 0) { showBackgroundImage(bgSlideFiles[bgSlideIndex]); }
+}
+
+// 仅轮播背景且多于一张时计时换图；重复调用会按当前间隔重新计时
 function startSlideshow() {
     stopSlideshow();
-    if (bgSlideFiles.length === 0 || currentBgType !== 'slideshow') return;
+    if (bgSlideFiles.length < 2 || currentBgType !== 'slideshow') return;
     bgSlideTimer = setInterval(function() {
-        if (bgSlideFiles.length === 0) return;
         bgSlideIndex = (bgSlideIndex + 1) % bgSlideFiles.length;
-        bgImagePath = bgSlideFiles[bgSlideIndex];
-        applyCustomBackground();
+        showSlide();
     }, bgSlideInterval * 1000);
 }
 
@@ -1080,18 +1089,11 @@ function stopSlideshow() {
     if (bgSlideTimer) { clearInterval(bgSlideTimer); bgSlideTimer = null; }
 }
 
+// 壳侧每次下发目录的完整文件列表（WE fetchall 语义），整体替换
 function onDirectoryFilesChanged(filePaths) {
     bgSlideFiles = filePaths || [];
     bgSlideIndex = 0;
-    if (bgSlideFiles.length > 0 && currentBgType === 'slideshow') {
-        bgImagePath = bgSlideFiles[0];
-        applyCustomBackground();
-    }
-    if (bgSlideFiles.length > 1 && currentBgType === 'slideshow') {
-        startSlideshow();
-    } else {
-        stopSlideshow();
-    }
+    if (currentBgType === 'slideshow') { applyCustomBackground(); }
 }
 
 // 粒子系统全局变量
@@ -1108,60 +1110,6 @@ var particleConfig = {
     color: '#6a5acd'
 };
 var particlesInstance = null;  // 保留供未来扩展使用
-
-// 直接修改已存在的粒子实例参数（与 updateParticleConfig 风格覆盖完全对齐，立即生效）
-function applyParticleParamsToInstance() {
-    try {
-        var pdom = window.pJSDom;
-        if (!pdom || pdom.length === 0) return;
-        var p = pdom[pdom.length - 1].pJS;
-        var style = particleConfig.style;
-        // 通用可调参数
-        p.particles.number.value = particleConfig.count;
-        p.particles.size.value = particleConfig.size;
-        p.particles.opacity.value = particleConfig.opacity;
-        p.particles.line_linked.distance = particleConfig.lineDistance;
-        p.particles.line_linked.opacity = particleConfig.lineOpacity;
-        p.particles.line_linked.enable = particleConfig.lineEnable;
-        p.particles.move.speed = particleConfig.speed;
-        p.particles.move.direction = particleConfig.direction;
-        // 风格覆盖
-        if (style === 'starry') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#6a5acd';
-            p.particles.line_linked.color = particleColorMode === 'solid' ? particleColorHex : '#6a5acd';
-            p.particles.shape.type = 'circle';
-            p.particles.line_linked.enable = true;
-        } else if (style === 'snow') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
-            p.particles.line_linked.enable = false;
-        } else if (style === 'geometric') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#20b2aa';
-            p.particles.line_linked.color = particleColorMode === 'solid' ? particleColorHex : '#20b2aa';
-            p.particles.shape.type = 'triangle';
-            p.particles.line_linked.enable = true;
-        } else if (style === 'bubbles') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : ['#FFD700', '#FF6347', '#7B68EE', '#00CED1', '#FF69B4'];
-            p.particles.line_linked.enable = false;
-        } else if (style === 'lightdots') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#ffffff';
-            p.particles.opacity = {value: 0.8, random: true, anim: {enable: true, speed: 1, opacity_min: 0.1, sync: false}};
-            p.particles.size = {value: 2, random: true, anim: {enable: true, speed: 2, size_min: 0.5, sync: false}};
-            p.particles.line_linked.enable = false;
-        } else if (style === 'firefly') {
-            p.particles.color.value = particleColorMode === 'solid' ? particleColorHex : '#FFD700';
-            p.particles.opacity = {value: 0.7, random: true, anim: {enable: true, speed: 2, opacity_min: 0.2, sync: false}};
-            p.particles.size = {value: 4, random: true, anim: {enable: true, speed: 3, size_min: 1, sync: false}};
-            p.particles.line_linked.enable = false;
-            p.particles.move.speed = 0.3;
-        } else if (style === 'thunder') {
-            p.particles.shape.type = 'circle';
-            p.particles.size.anim = { enable: false };
-            p.particles.color.value = '#e0eeff';
-            p.particles.move.speed = particleConfig.speed * 2.5;
-        }
-        p.fn.particlesRefresh();
-    } catch(e) { console.warn('[粒子] 参数更新失败:', e); }
-}
 
 function updateParticleConfig() {
     var cfg = {
@@ -1235,25 +1183,28 @@ function reinitParticles() {
     reinitTimer = setTimeout(_doReinitParticles, 150);
 }
 
-function _doReinitParticles() {
-    var el = document.getElementById('particles-js');
-    if (!el) return;
-    // 移除旧的 particlesJS resize 监听器（防泄漏）
+/// 停止并销毁全部粒子实例（粒子层唯一的销毁路径）。
+/// particles.js 的渲染循环句柄在 fn.drawAnimFrame（SVG 形状等待加载时在 tmp.checkAnimFrame），
+/// rAF 自续、不依赖 DOM 与 pJSDom 引用——不取消句柄，移除画布或丢弃引用都停不下循环。
+function destroyParticles() {
+    window.pJSDom.forEach(function(inst) {
+        cancelRequestAnimFrame(inst.pJS.fn.drawAnimFrame);
+        cancelRequestAnimFrame(inst.pJS.tmp.checkAnimFrame);
+    });
+    window.pJSDom = [];
+    particlesInstance = null;
     if (_particlesResizeFn) {
         window.removeEventListener('resize', _particlesResizeFn);
         _particlesResizeFn = null;
     }
-    // 销毁旧实例（minified版particlesJS把实例推到pJSDom数组，需逐个清理）
-    if (window.pJSDom && window.pJSDom.length > 0) {
-        window.pJSDom.forEach(function(old) {
-            try { if (old.pJS && old.pJS.fn) old.pJS.fn.canvas.clear(); } catch(e) {}
-        });
-        window.pJSDom = [];
-    }
-    // 清除旧canvas
-    while (el.firstChild) {
-        el.removeChild(el.firstChild);
-    }
+    var el = document.getElementById('particles-js');
+    if (el) { while (el.firstChild) { el.removeChild(el.firstChild); } }
+}
+
+/// 粒子层唯一的创建入口：先销毁旧实例，仅粒子背景才新建——保证任一时刻至多一个实例在渲染。
+function _doReinitParticles() {
+    destroyParticles();
+    if (currentBgType !== 'particles') return;
     var cfg = updateParticleConfig();
     try {
         if (window.particlesJS) {
@@ -1309,16 +1260,6 @@ function _doReinitParticles() {
         particlesInstance = null;
     }
 }
-
-// 初始化默认粒子（仅粒子背景才初始化；纯色/渐变等模式跳过，避免无谓创建+内部rAF泄漏）
-var _particlesInitDone = false;
-function ensureParticlesInit() {
-    if (_particlesInitDone) return;
-    _particlesInitDone = true;
-    if (currentBgType !== 'particles') return;  // 非粒子模式无需创建，避免CPU浪费
-    _doReinitParticles();
-}
-setTimeout(ensureParticlesInit, 150);
 
 var currentBgType = 'particles';
 var _clockHourHand = null, _clockMinuteHand = null, _clockSecondHand = null, _clockDigital = null;
@@ -1914,7 +1855,7 @@ window.wallpaperPropertyListener = {
         // 轮播间隔
         if (properties.slideshowinterval !== undefined) {
             bgSlideInterval = properties.slideshowinterval.value;
-            if (bgSlideFiles.length > 1 && currentBgType === 'slideshow') { startSlideshow(); }
+            startSlideshow();
         }
         // 音频律动
         if (properties.audioreactive !== undefined) {
@@ -1962,11 +1903,7 @@ window.wallpaperPropertyListener = {
         }
 
 
-        if (needReinit) {
-            ensureParticlesInit();  // 确保粒子已初始化
-            applyParticleParamsToInstance();  // 立即更新参数（不等 debounce）
-            reinitParticles();  // 异步完整重建（处理风格切换等）
-        }
+        if (needReinit) { reinitParticles(); }
         if (needReapply) { applyCustomBackground(); }
     },
     setPaused: function(paused) {
@@ -1978,11 +1915,7 @@ window.wallpaperPropertyListener = {
             if (fullUpdateTimer) { clearInterval(fullUpdateTimer); fullUpdateTimer = null; }
             // 停止音频调制定时器
             stopAudioMod();
-            // 移除 particlesJS 内部 resize 监听器（防泄漏）
-            if (_particlesResizeFn) {
-                window.removeEventListener('resize', _particlesResizeFn);
-                _particlesResizeFn = null;
-            }
+            destroyParticles();
             // 移除其他 resize 监听器（fixPos / resizeLightning）
             if (_resizeActive) {
                 for (var ri = 0; ri < _resizeHandlers.length; ri++) {
@@ -1990,15 +1923,6 @@ window.wallpaperPropertyListener = {
                 }
                 _resizeActive = false;
             }
-            // 停止粒子渲染循环 — 清空 pJSDom 并移除 canvas
-            if (window.pJSDom && window.pJSDom.length > 0) {
-                for (var i = 0; i < window.pJSDom.length; i++) {
-                    try { if (window.pJSDom[i].pJS && window.pJSDom[i].pJS.fn) window.pJSDom[i].pJS.fn.canvas.clear(); } catch(e) {}
-                }
-                window.pJSDom = [];
-            }
-            var particlesEl = document.getElementById('particles-js');
-            if (particlesEl) { while (particlesEl.firstChild) { particlesEl.removeChild(particlesEl.firstChild); } }
             // 暂停 CSS 动画 + JS 发光
             var animated = document.querySelectorAll('.floating');
             for (var a = 0; a < animated.length; a++) { animated[a].style.animationPlayState = 'paused'; }
@@ -2022,17 +1946,11 @@ window.wallpaperPropertyListener = {
                 }
                 _resizeActive = true;
             }
-            // 恢复渐变背景
-            if (currentBgType === 'gradient') applyCustomBackground();
+            // 按当前背景重装暂停时释放的内容（视频源 / 渐变 / 轮播 / 粒子实例 / 音频调制）
+            applyCustomBackground();
             // 恢复时钟定时器（使用保存的 FPS 间隔，而非硬编码 1000）
             if (!updateTimer) { updateTimer = setInterval(updateClockDisplay, _clockInterval); updateClockDisplay(); }
             if (!fullUpdateTimer) { fullUpdateTimer = setInterval(function() { updateTime(); updateHuangLi(); updateScorePanel(); }, 10000); updateTime(); updateHuangLi(); updateScorePanel(); }
-            // 恢复音频调制（仅在粒子+音频律动开启时恢复）
-            if (currentBgType === 'particles' && audioReactive) { audioModTimerActive = true; startAudioMod(); }
-            // 恢复粒子渲染：取消 applyUserProperties 可能触发的异步重建，避免双重初始化
-            clearTimeout(reinitTimer);
-            reinitTimer = null;
-            if (currentBgType === 'particles') { _doReinitParticles(); }
         }
     },
     userDirectoryFilesAddedOrChanged: function(propertyName, changedFiles) {

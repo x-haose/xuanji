@@ -32,6 +32,65 @@
     ipcLog('ONERROR', [e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')]);
   });
 
+  // 统一帧驱动：页面全部 requestAnimationFrame 回调（原版粒子 / 渐变 / 特效引擎）经此放行，
+  // 按 window.fps 限帧、壳侧暂停时整体冻结——对应 WE 帧率上限与暂停作用于整个页面的语义。
+  // 须先于页面脚本安装：particles.js 加载时即把 requestAnimationFrame 存入自己的全局。
+  var nativeRAF = window.requestAnimationFrame.bind(window);
+  var pending = new Map(); // 回调 id -> 回调，下一次放行的帧统一执行
+  var nextId = 1;
+  var driver = 0; // 已挂的原生 rAF；0 = 未挂
+  var lastFrame = 0; // 上次放行时刻（rAF 时间戳，ms）；0 = 恢复后首帧不限
+  var paused = false;
+  function drive(ts) {
+    driver = 0;
+    if (paused) return;
+    var fps = window.fps;
+    // -1ms 容差：显示器帧间隔抖动时不至于把 60fps 目标整帧跳成 30fps
+    if (typeof fps === 'number' && fps >= 1 && lastFrame && ts - lastFrame < 1000 / fps - 1) {
+      driver = nativeRAF(drive);
+      return;
+    }
+    lastFrame = ts;
+    var batch = pending;
+    pending = new Map();
+    batch.forEach(function (cb) {
+      try {
+        cb(ts);
+      } catch (e) {
+        // 与原生 rAF 一致：单个回调抛错不影响同帧其他回调，错误照常上报
+        setTimeout(function () {
+          throw e;
+        });
+      }
+    });
+  }
+  function schedule() {
+    if (!driver && !paused && pending.size) driver = nativeRAF(drive);
+  }
+  window.requestAnimationFrame = function (cb) {
+    var id = nextId++;
+    pending.set(id, cb);
+    schedule();
+    return id;
+  };
+  window.cancelAnimationFrame = function (id) {
+    pending.delete(id);
+  };
+
+  /// 壳侧全屏暂停开关：冻结帧驱动，并转调页面 WE 契约的 setPaused（停定时器 / 视频 / 轮播）。
+  /// 同值重复调用为空操作——页面 setPaused 的恢复分支不幂等（会重复起定时器）。
+  window.__xuanjiSetPaused = function (p) {
+    p = !!p;
+    if (p === paused) return;
+    paused = p;
+    if (!paused) {
+      lastFrame = 0;
+      schedule();
+    }
+    var l = window.wallpaperPropertyListener;
+    if (l && typeof l.setPaused === 'function') l.setPaused(paused);
+  };
+
   // 防闪白底只给 html 不给 body（body 不透明会盖住负 z-index 的粒子层）。
   // 且 WKWebView 不合成负 z-index 的 2D canvas，故把粒子/闪电层抬到非负层
   // （仍在 z-index:10 的卡片之下）——否则原版粒子背景在本壳里整层不可见。
@@ -83,6 +142,13 @@
     }
     var l = window.wallpaperPropertyListener;
     if (l && typeof l.applyUserProperties === 'function') l.applyUserProperties(props);
+  };
+  /// 壳侧下发目录型属性（WE fetchall 模式）的完整文件列表：转调页面 WE 契约。
+  window.__xuanjiDirectoryFiles = function (key, files) {
+    var l = window.wallpaperPropertyListener;
+    if (l && typeof l.userDirectoryFilesAddedOrChanged === 'function') {
+      l.userDirectoryFilesAddedOrChanged(key, files);
+    }
   };
   window.__xuanjiApplyGeneralProperties = function (props) {
     var l = window.wallpaperPropertyListener;

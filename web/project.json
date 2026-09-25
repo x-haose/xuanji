@@ -329,7 +329,7 @@
 			},
 			"fps" : 
 			{
-				"condition" : "['starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
+				"condition" : "['particles','gradient','starfield','ink','thunder','flowfield'].indexOf(bgtype.value) >= 0",
 				"index" : 53,
 				"max" : 120,
 				"min" : 15,
