@@ -1,12 +1,13 @@
 [package]
 name = "xuanji"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 
 [dependencies]
 cpal = "0.18.1"
 directories = "6.0.0"
+percent-encoding = "2.3.2"
 rfd = "0.17.2"
 rust-embed = { version = "8.7.2", features = ["include-exclude"] }
 rustfft = "6.4.1"
